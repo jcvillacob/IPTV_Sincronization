@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: iptv_db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-iptv_sync}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./backend
+    container_name: iptv_backend
+    ports:
+      - "8001:8000"
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-iptv_sync}
+      - IPTV_BASE_URL=${IPTV_BASE_URL}
+      - IPTV_USER=${IPTV_USER}
+      - IPTV_PASS=${IPTV_PASS}
+      - MEDIA_PATH=/media/usb/Compartida_Kodi
+      - ARCHIVE_PATH=/archive
+    volumes:
+      - ./backend:/app
+      - ${USB_MOUNT_PATH:-/media/usb}:/media/usb
+      - ${ARCHIVE_PATH:-/home/jvillacob/Archivos_IPTV}:/archive
+    depends_on:
+      db:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  frontend:
+    build: ./frontend
+    container_name: iptv_frontend
+    ports:
+      - "4200:4200"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    command: ng serve --host 0.0.0.0 --poll 2000
+
+volumes:
+  postgres_data:
