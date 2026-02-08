@@ -105,7 +105,7 @@ import { Download } from '../../models/content.model';
       <div class="downloads-list">
         <div 
           class="download-item fade-in-up" 
-          *ngFor="let download of filteredDownloads; let i = index"
+          *ngFor="let download of filteredDownloads; let i = index; trackBy: trackByDownloadId"
           [class.downloading]="download.status === 'downloading'"
           [class.selected]="isSelected(download)"
           [style.animation-delay.ms]="i * 50"
@@ -153,6 +153,32 @@ import { Download } from '../../models/content.model';
           </div>
           
           <div class="download-actions" (click)="$event.stopPropagation()">
+            <!-- Pause/Resume -->
+            <button 
+              class="btn btn-icon btn-ghost" 
+              *ngIf="download.status === 'downloading'"
+              (click)="pauseDownload(download)"
+              title="Pausar">
+              <lucide-icon name="pause-circle" [size]="18"></lucide-icon>
+            </button>
+            <button 
+              class="btn btn-icon btn-ghost" 
+              *ngIf="download.status === 'paused'"
+              (click)="resumeDownload(download)"
+              title="Reanudar">
+              <lucide-icon name="play-circle" [size]="18"></lucide-icon>
+            </button>
+
+            <!-- Priority -->
+            <button 
+              class="btn btn-icon btn-ghost" 
+              *ngIf="['pending', 'paused'].includes(download.status)"
+              (click)="setTopPriority(download)"
+              title="Priorizar al máximo">
+              <lucide-icon name="arrow-up-circle" [size]="18"></lucide-icon>
+            </button>
+
+            <!-- Retry -->
             <button 
               class="btn btn-icon btn-ghost" 
               *ngIf="download.status === 'error'"
@@ -160,9 +186,10 @@ import { Download } from '../../models/content.model';
               title="Reintentar">
               <lucide-icon name="refresh-cw" [size]="18"></lucide-icon>
             </button>
+
+            <!-- Delete (Always available) -->
             <button 
               class="btn btn-icon btn-ghost" 
-              *ngIf="download.status !== 'downloading'"
               (click)="deleteDownload(download)"
               title="Eliminar">
               <lucide-icon name="trash-2" [size]="18"></lucide-icon>
@@ -533,9 +560,30 @@ export class DownloadsComponent implements OnInit, OnDestroy {
 
   loadDownloads() {
     this.downloadService.getDownloads().subscribe({
-      next: (downloads) => this.downloads = downloads,
-      error: (err) => console.error('Error loading downloads:', err)
+      next: (newDownloads: Download[]) => {
+        // Optimización: Actualizar solo los campos que cambian en lugar de reemplazar todo
+        if (this.downloads.length === 0 || this.downloads.length !== newDownloads.length) {
+          this.downloads = newDownloads;
+        } else {
+          newDownloads.forEach((newDl: Download) => {
+            const existing = this.downloads.find(d => d.id === newDl.id);
+            if (existing) {
+              // Actualizar solo propiedades dinámicas
+              existing.status = newDl.status;
+              existing.progress = newDl.progress;
+              existing.file_size = newDl.file_size;
+              existing.error_message = newDl.error_message;
+              existing.file_path = newDl.file_path;
+            }
+          });
+        }
+      },
+      error: (err: any) => console.error('Error loading downloads:', err)
     });
+  }
+
+  trackByDownloadId(index: number, download: Download): number {
+    return download.id;
   }
 
   isSelected(download: Download): boolean {
@@ -566,6 +614,7 @@ export class DownloadsComponent implements OnInit, OnDestroy {
       case 'completed': return 'badge-success';
       case 'downloading': return 'badge-info';
       case 'pending': return 'badge-warning';
+      case 'paused': return 'badge-warning'; // Reuse warning or add specific style
       case 'error': return 'badge-error';
       default: return 'badge-purple';
     }
@@ -576,6 +625,7 @@ export class DownloadsComponent implements OnInit, OnDestroy {
       case 'completed': return 'Completado';
       case 'downloading': return 'Descargando';
       case 'pending': return 'Pendiente';
+      case 'paused': return 'Pausado';
       case 'error': return 'Error';
       case 'archived': return 'Archivado';
       default: return status;
@@ -592,7 +642,7 @@ export class DownloadsComponent implements OnInit, OnDestroy {
   retryDownload(download: Download) {
     this.downloadService.retryDownload(download.id).subscribe({
       next: () => this.loadDownloads(),
-      error: (err) => alert(`Error: ${err.error?.detail || 'No se pudo reintentar'}`)
+      error: (err: any) => alert(`Error: ${err.error?.detail || 'No se pudo reintentar'}`)
     });
   }
 
@@ -601,7 +651,33 @@ export class DownloadsComponent implements OnInit, OnDestroy {
 
     this.downloadService.deleteDownload(download.id).subscribe({
       next: () => this.loadDownloads(),
-      error: (err) => alert(`Error: ${err.error?.detail || 'No se pudo eliminar'}`)
+      error: (err: any) => alert(`Error: ${err.error?.detail || 'No se pudo eliminar'}`)
+    });
+  }
+
+  pauseDownload(download: Download) {
+    this.downloadService.pauseDownload(download.id).subscribe({
+      next: () => this.loadDownloads(),
+      error: (err: any) => alert(`Error: ${err.error?.detail || 'No se pudo pausar'}`)
+    });
+  }
+
+  resumeDownload(download: Download) {
+    this.downloadService.resumeDownload(download.id).subscribe({
+      next: () => this.loadDownloads(),
+      error: (err: any) => alert(`Error: ${err.error?.detail || 'No se pudo reanudar'}`)
+    });
+  }
+
+  setTopPriority(download: Download) {
+    // Arbitrary high number for now, or just increment max(priority) + 1
+    // Let's use 100 as "High Priority" for simplicity in this context
+    this.downloadService.setPriority(download.id, 100).subscribe({
+      next: () => {
+        this.loadDownloads();
+        // alert('Prioridad actualizada'); 
+      },
+      error: (err: any) => alert(`Error: ${err.error?.detail || 'No se pudo priorizar'}`)
     });
   }
 }

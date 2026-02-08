@@ -21,13 +21,19 @@ def sanitize_filename(name: str) -> str:
     return name.strip('_.')
 
 
-def generate_nfo_movie(title: str, year: str = "", plot: str = "") -> str:
+def generate_nfo_movie(title: str, year: str = "", plot: str = "", director: str = "", actors: str = "", genres: str = "", rating: str = "") -> str:
     """Generate NFO content for a movie (Kodi format)"""
     return f"""<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <movie>
     <title>{title}</title>
     <year>{year}</year>
     <plot>{plot}</plot>
+    <director>{director}</director>
+    <genre>{genres}</genre>
+    <actor>
+        <name>{actors}</name>
+    </actor>
+    <rating>{rating}</rating>
 </movie>
 """
 
@@ -73,7 +79,7 @@ class DownloadManager:
     def get_movie_folder_name(self, title: str, year: str = "") -> str:
         """Generate folder name for movie: Title_(Year)"""
         clean_title = sanitize_filename(title)
-        if year:
+        if year and f"({year})" not in title:
             return f"{clean_title}_({year})"
         return clean_title
     
@@ -105,14 +111,24 @@ class DownloadManager:
         """Download a movie with Kodi structure"""
         try:
             # Get movie info
-            movie_info = await self.iptv_client.get_movie_info(download.stream_id)
-            if not movie_info:
+            full_info = await self.iptv_client.get_movie_info(download.stream_id)
+            if not full_info:
                 self._update_error(download, db, "Movie not found in IPTV")
                 return False
             
-            extension = movie_info.get('container_extension', 'mp4')
-            year = movie_info.get('year', download.year or '')
-            poster_url = movie_info.get('stream_icon', '')
+            info = full_info.get('info', {})
+            movie_data = full_info.get('movie_data', {})
+            
+            extension = movie_data.get('container_extension', 'mp4')
+            
+            # Extract year from info or try to find it in title if missing
+            year = info.get('year') or info.get('releaseDate', '')[:4] or download.year or ''
+            if not year and download.title:
+                match = re.search(r'\((\d{4})\)', download.title)
+                if match:
+                    year = match.group(1)
+            
+            poster_url = movie_data.get('stream_icon') or info.get('movie_image', '')
             
             # Create folder structure
             movie_folder = self.get_movie_path(download.title, year)
@@ -131,7 +147,11 @@ class DownloadManager:
             nfo_content = generate_nfo_movie(
                 download.title, 
                 year, 
-                movie_info.get('plot', '')
+                info.get('plot', ''),
+                info.get('director', ''),
+                info.get('actors', ''),
+                info.get('genre', ''),
+                info.get('rating_5based', info.get('rating', ''))
             )
             nfo_path.write_text(nfo_content, encoding='utf-8')
             
@@ -214,6 +234,14 @@ class DownloadManager:
                             f.write(chunk)
                             downloaded += len(chunk)
                             
+                            # Periodically check status (every ~1MB)
+                            if downloaded % (1024*1024) == 0:
+                                db.expire(download)
+                                db.refresh(download)
+                                if download.status != DownloadStatus.DOWNLOADING:
+                                    # Status changed (paused, cancelled, error)
+                                    return False
+
                             if total_size > 0:
                                 progress = int((downloaded / total_size) * 100)
                                 if progress != download.progress:
@@ -262,9 +290,10 @@ async def process_download_queue():
                     db.commit()
                 
                 # 2. Get next pending download
+                # Order by Priority DESC, then Created At ASC
                 pending = db.query(Download).filter(
                     Download.status == DownloadStatus.PENDING
-                ).order_by(Download.created_at.asc()).first()
+                ).order_by(Download.priority.desc(), Download.created_at.asc()).first()
                 
                 if pending:
                     print(f"Starting download: {pending.title}")

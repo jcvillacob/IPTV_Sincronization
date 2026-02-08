@@ -127,10 +127,18 @@ import { MovieCardComponent } from '../../components/movie-card/movie-card.compo
         </p>
       </div>
       
+      <!-- Load More -->
+      <div class="load-more-container" *ngIf="filteredItems.length < matchedItems.length">
+        <button class="btn btn-primary" (click)="loadMore()">
+            <lucide-icon name="plus" [size]="18"></lucide-icon>
+            Cargar más ({{ matchedItems.length - filteredItems.length }} restantes)
+        </button>
+      </div>
+
       <!-- Results count -->
       <div class="results-info" *ngIf="!loading && filteredItems.length > 0">
         <span class="text-muted">
-          Mostrando {{ filteredItems.length }} de {{ allItems.length }} resultados
+          Mostrando {{ filteredItems.length }} de {{ matchedItems.length }} resultados
         </span>
       </div>
     </div>
@@ -280,9 +288,16 @@ import { MovieCardComponent } from '../../components/movie-card/movie-card.compo
     }
     
     .results-info {
-      margin-top: var(--spacing-xl);
+      margin-top: var(--spacing-sm);
       text-align: center;
       font-size: 0.875rem;
+    }
+
+    .load-more-container {
+        display: flex;
+        justify-content: center;
+        margin-top: var(--spacing-xl);
+        margin-bottom: var(--spacing-md);
     }
     
     @media (max-width: 768px) {
@@ -323,9 +338,11 @@ export class BrowseComponent implements OnInit, OnDestroy {
   selectedCategory: Category | null = null;
   allItems: (Movie | Series)[] = [];
   filteredItems: (Movie | Series)[] = [];
+  matchedItems: (Movie | Series)[] = []; // Store full results before pagination
   wishlist: (Movie | Series)[] = [];
   searchQuery = '';
   loading = false;
+  displayLimit = 50;
 
   downloadSubscription?: Subscription;
   activeDownloads: Map<string, Download> = new Map();
@@ -400,14 +417,16 @@ export class BrowseComponent implements OnInit, OnDestroy {
       : this.contentService.getSeriesCategories();
 
     request.subscribe({
-      next: (cats: Category[]) => this.categories = cats.slice(0, 25),
+      next: (cats: Category[]) => this.categories = cats,
       error: (err: any) => console.error('Error loading categories:', err)
     });
   }
 
   loadContent() {
     this.loading = true;
+    this.loading = true;
     this.searchQuery = ''; // Reset search on load
+    this.displayLimit = 50; // Reset pagination
     const categoryId = this.selectedCategory?.category_id;
 
     // Use specific type based on contentType but handle as union
@@ -439,15 +458,29 @@ export class BrowseComponent implements OnInit, OnDestroy {
   }
 
   filterContent() {
-    if (!this.searchQuery.trim()) {
-      this.filteredItems = this.allItems.slice(0, 100);
-      return;
+    // Reset limit when searching to show fresh results
+    if (this.searchQuery && this.filteredItems.length === this.matchedItems.length && this.displayLimit > 50) {
+      this.displayLimit = 50;
     }
 
-    const query = this.searchQuery.toLowerCase();
-    this.filteredItems = this.allItems
-      .filter(item => item.name.toLowerCase().includes(query))
-      .slice(0, 100);
+    if (!this.searchQuery.trim()) {
+      this.matchedItems = this.allItems;
+    } else {
+      const query = this.searchQuery.toLowerCase();
+      this.matchedItems = this.allItems
+        .filter(item => item.name.toLowerCase().includes(query));
+    }
+
+    this.updateDisplay();
+  }
+
+  updateDisplay() {
+    this.filteredItems = this.matchedItems.slice(0, this.displayLimit);
+  }
+
+  loadMore() {
+    this.displayLimit += 50;
+    this.updateDisplay();
   }
 
   isInWishlist(item: Movie | Series): boolean {

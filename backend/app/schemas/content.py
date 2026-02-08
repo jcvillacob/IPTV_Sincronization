@@ -21,6 +21,7 @@ class DownloadStatus(str, Enum):
     ERROR = "error"
     ARCHIVED = "archived"
     SCHEDULED = "scheduled"
+    PAUSED = "paused"
 
 
 class ContentType(str, Enum):
@@ -115,6 +116,7 @@ class DownloadResponse(BaseModel):
     year: Optional[str] = None
     scheduled: bool = False
     scheduled_time: Optional[datetime] = None
+    priority: int = 0
     created_at: datetime
     completed_at: Optional[datetime] = None
 

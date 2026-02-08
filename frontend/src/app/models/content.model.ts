@@ -69,7 +69,7 @@ export interface Download {
     file_path?: string;
     file_extension?: string;
     file_size: number;
-    status: 'pending' | 'downloading' | 'completed' | 'error' | 'archived' | 'scheduled';
+    status: 'pending' | 'downloading' | 'completed' | 'error' | 'archived' | 'scheduled' | 'paused';
     progress: number;
     error_message?: string;
     poster_url?: string;
@@ -78,6 +78,7 @@ export interface Download {
     completed_at?: string;
     scheduled?: boolean;
     scheduled_time?: string;
+    priority?: number;
 }
 
 export interface StorageInfo {

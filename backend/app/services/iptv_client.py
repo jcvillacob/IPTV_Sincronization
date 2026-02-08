@@ -75,10 +75,9 @@ class IPTVClient:
     
     # Movie info
     async def get_movie_info(self, stream_id: str) -> dict:
-        """Get detailed info for a specific movie"""
-        movies = await self.get_vod_streams()
-        movie = next((m for m in movies if str(m.get('stream_id')) == str(stream_id)), None)
-        return movie or {}
+        """Get detailed info for a specific movie using get_vod_info"""
+        params = f"&vod_id={stream_id}"
+        return await self._request("get_vod_info", params)
     
     def build_movie_url(self, stream_id: str, extension: str = "mp4") -> str:
         """Build direct download URL for a movie"""

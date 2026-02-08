@@ -12,6 +12,7 @@ class DownloadStatus(str, enum.Enum):
     ERROR = "error"
     ARCHIVED = "archived"
     SCHEDULED = "scheduled"
+    PAUSED = "paused"
 
 
 class ContentType(str, enum.Enum):
@@ -41,6 +42,7 @@ class Download(Base):
     status = Column(Enum(DownloadStatus), default=DownloadStatus.PENDING)
     progress = Column(Integer, default=0)  # 0-100
     error_message = Column(String, nullable=True)
+    priority = Column(Integer, default=0)
     
     # Scheduled downloads (for 1 AM batch)
     scheduled = Column(Boolean, default=False)

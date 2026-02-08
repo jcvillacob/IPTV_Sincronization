@@ -31,6 +31,18 @@ export class DownloadService {
         return this.http.post<Download>(`${this.apiUrl}/${id}/retry`, {});
     }
 
+    pauseDownload(id: number): Observable<Download> {
+        return this.http.post<Download>(`${this.apiUrl}/${id}/pause`, {});
+    }
+
+    resumeDownload(id: number): Observable<Download> {
+        return this.http.post<Download>(`${this.apiUrl}/${id}/resume`, {});
+    }
+
+    setPriority(id: number, priority: number): Observable<Download> {
+        return this.http.post<Download>(`${this.apiUrl}/${id}/priority?priority=${priority}`, {});
+    }
+
     deleteDownload(id: number): Observable<void> {
         return this.http.delete<void>(`${this.apiUrl}/${id}`);
     }

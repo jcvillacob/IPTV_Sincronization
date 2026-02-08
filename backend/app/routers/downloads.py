@@ -127,12 +127,57 @@ async def delete_download(download_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Download not found")
     
     if download.status == DownloadStatus.DOWNLOADING:
-        raise HTTPException(status_code=400, detail="Cannot delete while downloading")
+        # Mark as deleted so the manager can stop it
+        # Setting status to something else (e.g. cancelled) or just delete record
+        # Ideally the manager checks if record exists.
+        pass
     
     db.delete(download)
     db.commit()
     
     return {"message": "Download deleted"}
+
+
+@router.post("/{download_id}/pause", response_model=DownloadResponse)
+async def pause_download(download_id: int, db: Session = Depends(get_db)):
+    """Pause a download"""
+    download = db.query(Download).filter(Download.id == download_id).first()
+    if not download:
+        raise HTTPException(status_code=404, detail="Download not found")
+    
+    if download.status not in [DownloadStatus.PENDING, DownloadStatus.DOWNLOADING]:
+        raise HTTPException(status_code=400, detail="Cannot pause completed or failed downloads")
+        
+    download.status = DownloadStatus.PAUSED
+    db.commit()
+    return download
+
+
+@router.post("/{download_id}/resume", response_model=DownloadResponse)
+async def resume_download(download_id: int, db: Session = Depends(get_db)):
+    """Resume a paused download"""
+    download = db.query(Download).filter(Download.id == download_id).first()
+    if not download:
+        raise HTTPException(status_code=404, detail="Download not found")
+        
+    if download.status != DownloadStatus.PAUSED:
+        raise HTTPException(status_code=400, detail="Download is not paused")
+        
+    download.status = DownloadStatus.PENDING
+    db.commit()
+    return download
+
+
+@router.post("/{download_id}/priority", response_model=DownloadResponse)
+async def set_priority(download_id: int, priority: int = 1, db: Session = Depends(get_db)):
+    """Set download priority (higher number = higher priority)"""
+    download = db.query(Download).filter(Download.id == download_id).first()
+    if not download:
+        raise HTTPException(status_code=404, detail="Download not found")
+        
+    download.priority = priority
+    db.commit()
+    return download
 
 
 @router.post("/{download_id}/retry", response_model=DownloadResponse)
