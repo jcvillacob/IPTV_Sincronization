@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, BigInteger, Enum
+from sqlalchemy import Column, Integer, String, DateTime, BigInteger, Enum, Boolean
 from sqlalchemy.sql import func
 import enum
 
@@ -11,6 +11,7 @@ class DownloadStatus(str, enum.Enum):
     COMPLETED = "completed"
     ERROR = "error"
     ARCHIVED = "archived"
+    SCHEDULED = "scheduled"
 
 
 class ContentType(str, enum.Enum):
@@ -40,6 +41,10 @@ class Download(Base):
     status = Column(Enum(DownloadStatus), default=DownloadStatus.PENDING)
     progress = Column(Integer, default=0)  # 0-100
     error_message = Column(String, nullable=True)
+    
+    # Scheduled downloads (for 1 AM batch)
+    scheduled = Column(Boolean, default=False)
+    scheduled_time = Column(DateTime(timezone=True), nullable=True)
     
     # Metadata
     poster_url = Column(String, nullable=True)

@@ -45,44 +45,39 @@ export interface SeriesDetail {
     seasons: SeasonInfo[];
 }
 
-export type DownloadStatus = 'pending' | 'downloading' | 'completed' | 'error' | 'archived';
-export type ContentType = 'movie' | 'episode';
+export interface DownloadCreate {
+    stream_id: string;
+    title: string;
+    content_type: 'movie' | 'episode';
+    series_name?: string;
+    season?: number;
+    episode?: number;
+    poster_url?: string;
+    year?: string;
+    file_extension?: string;
+    scheduled?: boolean;
+}
 
 export interface Download {
     id: number;
     stream_id: string;
     title: string;
-    content_type: ContentType;
+    content_type: 'movie' | 'episode';
     series_name?: string;
     season?: number;
     episode?: number;
     file_path?: string;
     file_extension?: string;
     file_size: number;
-    status: DownloadStatus;
+    status: 'pending' | 'downloading' | 'completed' | 'error' | 'archived' | 'scheduled';
     progress: number;
     error_message?: string;
     poster_url?: string;
     year?: string;
     created_at: string;
     completed_at?: string;
-}
-
-export interface DownloadCreate {
-    stream_id: string;
-    title: string;
-    content_type: ContentType;
-    series_name?: string;
-    season?: number;
-    episode?: number;
-    poster_url?: string;
-    year?: string;
-    file_extension?: string;
-}
-
-export interface SearchResult {
-    movies: Movie[];
-    series: Series[];
+    scheduled?: boolean;
+    scheduled_time?: string;
 }
 
 export interface StorageInfo {
@@ -93,4 +88,9 @@ export interface StorageInfo {
     used_gb: number;
     free_gb: number;
     percent_used: number;
+}
+
+export interface SearchResult {
+    movies: Movie[];
+    series: Series[];
 }

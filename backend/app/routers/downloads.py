@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 from typing import List
-from datetime import datetime
+from datetime import datetime, timedelta
+from pydantic import BaseModel
 
 from app.database import get_db
 from app.models import Download, DownloadStatus, ContentType
@@ -9,6 +10,19 @@ from app.schemas import DownloadCreate, DownloadResponse
 from app.services import get_download_manager
 
 router = APIRouter()
+
+
+class BatchDownloadsRequest(BaseModel):
+    downloads: List[DownloadCreate]
+
+
+def get_next_1am() -> datetime:
+    """Get the next 1 AM timestamp"""
+    now = datetime.now()
+    next_1am = now.replace(hour=1, minute=0, second=0, microsecond=0)
+    if now.hour >= 1:
+        next_1am += timedelta(days=1)
+    return next_1am
 
 
 @router.get("", response_model=List[DownloadResponse])
@@ -49,7 +63,7 @@ async def create_download(
     # Check if already exists
     existing = db.query(Download).filter(
         Download.stream_id == download_data.stream_id,
-        Download.status.in_([DownloadStatus.PENDING, DownloadStatus.DOWNLOADING, DownloadStatus.COMPLETED])
+        Download.status.in_([DownloadStatus.PENDING, DownloadStatus.DOWNLOADING, DownloadStatus.COMPLETED, DownloadStatus.SCHEDULED])
     ).first()
     
     if existing:
@@ -57,6 +71,8 @@ async def create_download(
             status_code=400, 
             detail=f"Content already in queue with status: {existing.status.value}"
         )
+    
+    is_scheduled = download_data.scheduled or False
     
     # Create download record
     download = Download(
@@ -69,21 +85,22 @@ async def create_download(
         poster_url=download_data.poster_url,
         year=download_data.year,
         file_extension=download_data.file_extension,
-        status=DownloadStatus.PENDING
+        status=DownloadStatus.SCHEDULED if is_scheduled else DownloadStatus.PENDING,
+        scheduled=is_scheduled,
+        scheduled_time=get_next_1am() if is_scheduled else None
     )
     
     db.add(download)
     db.commit()
     db.refresh(download)
     
-    # Start download in background
-    background_tasks.add_task(start_download, download.id)
+    # Starting of download is handled by the queue processor
     
     return download
 
 
 async def start_download(download_id: int):
-    """Background task to process download"""
+    """Background task to process download (kept for backward compatibility or forced starts)"""
     from app.database import SessionLocal
     
     db = SessionLocal()
@@ -137,29 +154,29 @@ async def retry_download(
     download.progress = 0
     db.commit()
     
-    background_tasks.add_task(start_download, download.id)
-    
     return download
 
 
 @router.post("/batch", response_model=List[DownloadResponse])
 async def create_batch_downloads(
-    downloads_data: List[DownloadCreate],
+    request: BatchDownloadsRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     """Add multiple items to download queue"""
     created = []
     
-    for download_data in downloads_data:
+    for download_data in request.downloads:
         # Check if already exists
         existing = db.query(Download).filter(
             Download.stream_id == download_data.stream_id,
-            Download.status.in_([DownloadStatus.PENDING, DownloadStatus.DOWNLOADING, DownloadStatus.COMPLETED])
+            Download.status.in_([DownloadStatus.PENDING, DownloadStatus.DOWNLOADING, DownloadStatus.COMPLETED, DownloadStatus.SCHEDULED])
         ).first()
         
         if existing:
             continue
+        
+        is_scheduled = download_data.scheduled or False
         
         download = Download(
             stream_id=download_data.stream_id,
@@ -171,14 +188,14 @@ async def create_batch_downloads(
             poster_url=download_data.poster_url,
             year=download_data.year,
             file_extension=download_data.file_extension,
-            status=DownloadStatus.PENDING
+            status=DownloadStatus.SCHEDULED if is_scheduled else DownloadStatus.PENDING,
+            scheduled=is_scheduled,
+            scheduled_time=get_next_1am() if is_scheduled else None
         )
         
         db.add(download)
         db.commit()
         db.refresh(download)
         created.append(download)
-        
-        background_tasks.add_task(start_download, download.id)
     
     return created

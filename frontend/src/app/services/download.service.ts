@@ -11,13 +11,8 @@ export class DownloadService {
 
     constructor(private http: HttpClient) { }
 
-    getDownloads(status?: string): Observable<Download[]> {
-        const params = status ? `?status=${status}` : '';
-        return this.http.get<Download[]>(`${this.apiUrl}${params}`);
-    }
-
-    getDownload(id: number): Observable<Download> {
-        return this.http.get<Download>(`${this.apiUrl}/${id}`);
+    getDownloads(): Observable<Download[]> {
+        return this.http.get<Download[]>(this.apiUrl);
     }
 
     createDownload(download: DownloadCreate): Observable<Download> {
@@ -25,14 +20,22 @@ export class DownloadService {
     }
 
     createBatchDownloads(downloads: DownloadCreate[]): Observable<Download[]> {
-        return this.http.post<Download[]>(`${this.apiUrl}/batch`, downloads);
+        return this.http.post<Download[]>(`${this.apiUrl}/batch`, { downloads });
     }
 
-    deleteDownload(id: number): Observable<any> {
-        return this.http.delete(`${this.apiUrl}/${id}`);
+    startDownload(id: number): Observable<Download> {
+        return this.http.post<Download>(`${this.apiUrl}/${id}/start`, {});
     }
 
     retryDownload(id: number): Observable<Download> {
         return this.http.post<Download>(`${this.apiUrl}/${id}/retry`, {});
+    }
+
+    deleteDownload(id: number): Observable<void> {
+        return this.http.delete<void>(`${this.apiUrl}/${id}`);
+    }
+
+    archiveDownload(id: number): Observable<Download> {
+        return this.http.post<Download>(`${this.apiUrl}/${id}/archive`, {});
     }
 }

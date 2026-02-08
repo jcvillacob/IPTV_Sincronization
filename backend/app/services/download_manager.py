@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.config import get_settings
 from app.models.download import Download, DownloadStatus, ContentType
 from app.services.iptv_client import get_iptv_client
+from app.database import SessionLocal
 
 
 def sanitize_filename(name: str) -> str:
@@ -236,24 +237,54 @@ class DownloadManager:
 
 
 # Background task for processing downloads
-async def process_download_queue(db: Session):
-    """Process pending downloads one by one"""
+async def process_download_queue():
+    """Process pending downloads one by one and check scheduled"""
     manager = DownloadManager()
     
+    print("Download queue processor started")
+    
     while True:
-        # Get next pending download
-        pending = db.query(Download).filter(
-            Download.status == DownloadStatus.PENDING
-        ).first()
-        
-        if pending:
-            if pending.content_type == ContentType.MOVIE:
-                await manager.download_movie(pending, db)
-            else:
-                await manager.download_episode(pending, db)
-        else:
-            # No pending downloads, wait 5 seconds
+        try:
+            db = SessionLocal()
+            try:
+                # 1. Check for scheduled items that are due
+                now = datetime.now()
+                scheduled = db.query(Download).filter(
+                    Download.status == DownloadStatus.SCHEDULED,
+                    Download.scheduled_time <= now
+                ).all()
+                
+                if scheduled:
+                    print(f"Activating {len(scheduled)} scheduled downloads")
+                    for item in scheduled:
+                        item.status = DownloadStatus.PENDING
+                        item.scheduled = False  # Mark as done scheduling
+                    db.commit()
+                
+                # 2. Get next pending download
+                pending = db.query(Download).filter(
+                    Download.status == DownloadStatus.PENDING
+                ).order_by(Download.created_at.asc()).first()
+                
+                if pending:
+                    print(f"Starting download: {pending.title}")
+                    if pending.content_type == ContentType.MOVIE:
+                        await manager.download_movie(pending, db)
+                    else:
+                        await manager.download_episode(pending, db)
+                else:
+                    # No pending downloads, wait 5 seconds
+                    pass
+                    
+            finally:
+                db.close()
+                
+            # Wait before next check
             await asyncio.sleep(5)
+            
+        except Exception as e:
+            print(f"Error in download queue: {e}")
+            await asyncio.sleep(10)
 
 
 # Singleton instance

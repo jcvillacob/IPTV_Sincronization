@@ -1,63 +1,94 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { LucideAngularModule } from 'lucide-angular';
+import { Subscription, interval } from 'rxjs';
+import { startWith, switchMap } from 'rxjs/operators';
 import { ContentService } from '../../services/content.service';
 import { DownloadService } from '../../services/download.service';
-import { Category, Movie, Series, DownloadCreate } from '../../models/content.model';
+import { Category, Movie, Series, DownloadCreate, Download } from '../../models/content.model';
 import { MovieCardComponent } from '../../components/movie-card/movie-card.component';
 
 @Component({
-    selector: 'app-browse',
-    standalone: true,
-    imports: [CommonModule, MovieCardComponent],
-    template: `
+  selector: 'app-browse',
+  standalone: true,
+  imports: [CommonModule, FormsModule, LucideAngularModule, MovieCardComponent],
+  template: `
     <div class="browse-page">
+      <!-- Header -->
       <header class="page-header">
-        <h1>Explorar Contenido</h1>
-        <p class="text-secondary">Navega por categorías de películas y series</p>
+        <div class="header-content">
+          <h1>Explorar <span class="text-gradient">Contenido</span></h1>
+          <p class="text-secondary">Busca y selecciona películas y series para descargar</p>
+        </div>
       </header>
       
-      <!-- Type Tabs -->
-      <div class="type-tabs">
-        <button 
-          class="tab" 
-          [class.active]="contentType === 'movies'"
-          (click)="setContentType('movies')">
-          🎬 Películas
-        </button>
-        <button 
-          class="tab" 
-          [class.active]="contentType === 'series'"
-          (click)="setContentType('series')">
-          📺 Series
-        </button>
+      <!-- Search & Filters Bar -->
+      <div class="search-filters-bar glass">
+        <div class="search-wrapper">
+          <lucide-icon name="search" [size]="20" class="search-icon"></lucide-icon>
+          <input 
+            type="text"
+            class="input input-lg"
+            [(ngModel)]="searchQuery"
+            (input)="filterContent()"
+            placeholder="Buscar por nombre...">
+        </div>
+        
+        <div class="type-toggle">
+          <button 
+            class="toggle-btn" 
+            [class.active]="contentType === 'movies'"
+            (click)="setContentType('movies')">
+            <lucide-icon name="film" [size]="18"></lucide-icon>
+            Películas
+          </button>
+          <button 
+            class="toggle-btn" 
+            [class.active]="contentType === 'series'"
+            (click)="setContentType('series')">
+            <lucide-icon name="tv" [size]="18"></lucide-icon>
+            Series
+          </button>
+        </div>
       </div>
       
-      <!-- Selection Bar -->
-      <div class="selection-bar" *ngIf="selectedItems.length > 0">
-        <span>{{ selectedItems.length }} seleccionado(s)</span>
-        <button class="btn btn-primary" (click)="downloadSelected()">
-          ⬇️ Descargar Seleccionados
-        </button>
-        <button class="btn btn-secondary" (click)="clearSelection()">
-          ✖️ Limpiar
-        </button>
-      </div>
-      
-      <!-- Categories -->
+      <!-- Categories Scroll -->
       <div class="categories-section">
         <div class="categories-scroll">
           <button 
-            class="category-chip"
+            class="chip"
             [class.active]="!selectedCategory"
             (click)="selectCategory(null)">
-            Todos
+            Todas
           </button>
           <button 
             *ngFor="let cat of categories"
-            class="category-chip"
+            class="chip"
             [class.active]="selectedCategory?.category_id === cat.category_id"
             (click)="selectCategory(cat)">
             {{ cat.category_name }}
+          </button>
+        </div>
+      </div>
+      
+      <!-- Selection/Wishlist Bar -->
+      <div class="selection-bar glass" *ngIf="wishlist.length > 0" @fadeIn>
+        <div class="selection-info">
+          <lucide-icon name="heart" [size]="20"></lucide-icon>
+          <span><strong>{{ wishlist.length }}</strong> en lista de deseos</span>
+        </div>
+        <div class="selection-actions">
+          <button class="btn btn-success" (click)="downloadNow()">
+            <lucide-icon name="download" [size]="18"></lucide-icon>
+            Descargar Ahora
+          </button>
+          <button class="btn btn-warning" (click)="scheduleDownload()">
+            <lucide-icon name="clock" [size]="18"></lucide-icon>
+            Programar 1 AM
+          </button>
+          <button class="btn btn-ghost" (click)="clearWishlist()">
+            <lucide-icon name="x" [size]="18"></lucide-icon>
           </button>
         </div>
       </div>
@@ -71,77 +102,113 @@ import { MovieCardComponent } from '../../components/movie-card/movie-card.compo
       <!-- Content Grid -->
       <div class="content-grid" *ngIf="!loading">
         <app-movie-card 
-          *ngFor="let item of displayItems"
+          *ngFor="let item of filteredItems; let i = index"
           [item]="item"
           [type]="contentType"
-          [selected]="isSelected(item)"
-          (select)="toggleSelection(item)"
-          (download)="downloadItem(item)">
+          [inWishlist]="isInWishlist(item)"
+          [downloadStatus]="getDownloadStatus(item)"
+          [downloadProgress]="getDownloadProgress(item)"
+          [style.animation-delay.ms]="i * 30"
+          (addToWishlist)="toggleWishlist(item)"
+          (downloadNow)="downloadSingleItem(item)"
+          (scheduleDownload)="scheduleSingleItem(item)">
         </app-movie-card>
       </div>
       
       <!-- Empty State -->
-      <div class="empty-state" *ngIf="!loading && displayItems.length === 0">
-        <span class="empty-icon">📭</span>
-        <p>No hay contenido disponible</p>
+      <div class="empty-state" *ngIf="!loading && filteredItems.length === 0">
+        <lucide-icon name="search" [size]="64" class="empty-state-icon"></lucide-icon>
+        <h3>No se encontraron resultados</h3>
+        <p class="text-muted" *ngIf="searchQuery">
+          No hay coincidencias para "{{ searchQuery }}"
+        </p>
+        <p class="text-muted" *ngIf="!searchQuery">
+          Esta categoría no tiene contenido disponible
+        </p>
+      </div>
+      
+      <!-- Results count -->
+      <div class="results-info" *ngIf="!loading && filteredItems.length > 0">
+        <span class="text-muted">
+          Mostrando {{ filteredItems.length }} de {{ allItems.length }} resultados
+        </span>
       </div>
     </div>
   `,
-    styles: [`
+  styles: [`
     .browse-page {
       max-width: 1400px;
+      margin: 0 auto;
     }
     
     .page-header {
       margin-bottom: var(--spacing-xl);
     }
     
-    .page-header h1 {
+    .header-content h1 {
       margin-bottom: var(--spacing-xs);
     }
     
-    .type-tabs {
+    .search-filters-bar {
       display: flex;
-      gap: var(--spacing-sm);
+      gap: var(--spacing-lg);
+      padding: var(--spacing-lg);
+      border-radius: var(--radius-xl);
       margin-bottom: var(--spacing-lg);
+      align-items: center;
     }
     
-    .tab {
-      padding: var(--spacing-sm) var(--spacing-lg);
-      background: var(--bg-card);
-      border: 1px solid var(--border);
+    .search-wrapper {
+      flex: 1;
+      position: relative;
+    }
+    
+    .search-wrapper .search-icon {
+      position: absolute;
+      left: 1rem;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--text-muted);
+      pointer-events: none;
+    }
+    
+    .search-wrapper .input {
+      padding-left: 4rem;
+      background: var(--bg-input);
+      width: 100%;
+    }
+    
+    .type-toggle {
+      display: flex;
+      background: var(--bg-input);
       border-radius: var(--radius-lg);
+      padding: 4px;
+      flex-shrink: 0;
+    }
+    
+    .toggle-btn {
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-sm);
+      padding: 0.625rem 1.25rem;
+      border: none;
+      background: transparent;
       color: var(--text-secondary);
       font-weight: 500;
+      font-size: 0.875rem;
+      border-radius: var(--radius-md);
       cursor: pointer;
-      transition: all 0.2s ease;
+      transition: all var(--transition-fast);
     }
     
-    .tab:hover {
-      background: var(--bg-hover);
+    .toggle-btn:hover {
       color: var(--text-primary);
     }
     
-    .tab.active {
-      background: var(--primary);
-      border-color: var(--primary);
-      color: white;
-    }
-    
-    .selection-bar {
-      display: flex;
-      align-items: center;
-      gap: var(--spacing-md);
-      padding: var(--spacing-md);
+    .toggle-btn.active {
       background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
-      border-radius: var(--radius-lg);
-      margin-bottom: var(--spacing-lg);
-      animation: fadeIn 0.3s ease;
-    }
-    
-    .selection-bar span {
-      flex: 1;
-      font-weight: 500;
+      color: white;
+      box-shadow: var(--shadow-sm);
     }
     
     .categories-section {
@@ -153,38 +220,42 @@ import { MovieCardComponent } from '../../components/movie-card/movie-card.compo
       gap: var(--spacing-sm);
       overflow-x: auto;
       padding-bottom: var(--spacing-sm);
+      scrollbar-width: none;
     }
     
-    .category-chip {
-      flex-shrink: 0;
-      padding: var(--spacing-xs) var(--spacing-md);
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: var(--radius-xl);
-      color: var(--text-secondary);
-      font-size: 0.875rem;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      white-space: nowrap;
+    .categories-scroll::-webkit-scrollbar {
+      display: none;
     }
     
-    .category-chip:hover {
-      background: var(--bg-hover);
-      color: var(--text-primary);
+    .selection-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: var(--spacing-md) var(--spacing-lg);
+      border-radius: var(--radius-lg);
+      margin-bottom: var(--spacing-lg);
+      border: 1px solid var(--primary);
+      background: rgba(139, 92, 246, 0.1);
     }
     
-    .category-chip.active {
-      background: var(--secondary);
-      border-color: var(--secondary);
-      color: white;
+    .selection-info {
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-sm);
+      color: var(--primary-light);
+    }
+    
+    .selection-actions {
+      display: flex;
+      gap: var(--spacing-sm);
     }
     
     .loading-state {
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: var(--spacing-md);
-      padding: var(--spacing-xl) * 2;
+      gap: var(--spacing-lg);
+      padding: 80px 20px;
       color: var(--text-secondary);
     }
     
@@ -192,162 +263,274 @@ import { MovieCardComponent } from '../../components/movie-card/movie-card.compo
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
       gap: var(--spacing-lg);
+      justify-content: center;
+    }
+    
+    .content-grid > * {
+      animation: fadeInUp 0.4s ease forwards;
+      opacity: 0;
     }
     
     .empty-state {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: var(--spacing-md);
-      padding: var(--spacing-xl) * 2;
-      color: var(--text-muted);
+      padding: 80px 20px;
     }
     
-    .empty-icon {
-      font-size: 3rem;
+    .empty-state h3 {
+      margin-bottom: var(--spacing-sm);
+    }
+    
+    .results-info {
+      margin-top: var(--spacing-xl);
+      text-align: center;
+      font-size: 0.875rem;
+    }
+    
+    @media (max-width: 768px) {
+      .search-filters-bar {
+        flex-direction: column;
+        align-items: stretch;
+      }
+      
+      .search-wrapper {
+        width: 100%;
+      }
+      
+      .type-toggle {
+        width: 100%;
+      }
+       
+      .toggle-btn {
+        flex: 1;
+        justify-content: center;
+      }
+      
+      .selection-bar {
+        flex-direction: column;
+        gap: var(--spacing-md);
+      }
+      
+      .selection-actions {
+        width: 100%;
+        justify-content: center;
+        flex-wrap: wrap;
+      }
     }
   `]
 })
-export class BrowseComponent implements OnInit {
-    contentType: 'movies' | 'series' = 'movies';
-    categories: Category[] = [];
-    selectedCategory: Category | null = null;
-    movies: Movie[] = [];
-    series: Series[] = [];
-    selectedItems: (Movie | Series)[] = [];
-    loading = false;
+export class BrowseComponent implements OnInit, OnDestroy {
+  contentType: 'movies' | 'series' = 'movies';
+  categories: Category[] = [];
+  selectedCategory: Category | null = null;
+  allItems: (Movie | Series)[] = [];
+  filteredItems: (Movie | Series)[] = [];
+  wishlist: (Movie | Series)[] = [];
+  searchQuery = '';
+  loading = false;
 
-    constructor(
-        private contentService: ContentService,
-        private downloadService: DownloadService
-    ) { }
+  downloadSubscription?: Subscription;
+  activeDownloads: Map<string, Download> = new Map();
 
-    ngOnInit() {
-        this.loadCategories();
-        this.loadContent();
+  constructor(
+    private contentService: ContentService,
+    private downloadService: DownloadService
+  ) { }
+
+  ngOnInit() {
+    this.loadCategories();
+    this.loadContent();
+    this.startDownloadPolling();
+  }
+
+  ngOnDestroy() {
+    if (this.downloadSubscription) {
+      this.downloadSubscription.unsubscribe();
     }
+  }
 
-    get displayItems(): (Movie | Series)[] {
-        return this.contentType === 'movies' ? this.movies : this.series;
-    }
-
-    setContentType(type: 'movies' | 'series') {
-        this.contentType = type;
-        this.clearSelection();
-        this.loadCategories();
-        this.loadContent();
-    }
-
-    selectCategory(category: Category | null) {
-        this.selectedCategory = category;
-        this.loadContent();
-    }
-
-    loadCategories() {
-        const request = this.contentType === 'movies'
-            ? this.contentService.getMovieCategories()
-            : this.contentService.getSeriesCategories();
-
-        request.subscribe({
-            next: (cats) => this.categories = cats.slice(0, 30), // Limit categories
-            error: (err) => console.error('Error loading categories:', err)
+  startDownloadPolling() {
+    this.downloadSubscription = interval(5000).pipe(
+      startWith(0),
+      switchMap(() => this.downloadService.getDownloads())
+    ).subscribe({
+      next: (downloads: Download[]) => {
+        this.activeDownloads.clear();
+        downloads.forEach((d: Download) => {
+          if (d.stream_id) {
+            this.activeDownloads.set(d.stream_id, d);
+          }
         });
+      },
+      error: (err: any) => console.error('Error polling downloads:', err)
+    });
+  }
+
+  getDownloadStatus(item: Movie | Series): string | undefined {
+    if ('stream_id' in item) {
+      const download = this.activeDownloads.get(String(item.stream_id));
+      return download ? download.status : undefined;
     }
+    return undefined;
+  }
 
-    loadContent() {
-        this.loading = true;
-        const categoryId = this.selectedCategory?.category_id;
+  getDownloadProgress(item: Movie | Series): number {
+    if ('stream_id' in item) {
+      const download = this.activeDownloads.get(String(item.stream_id));
+      return download ? download.progress : 0;
+    }
+    return 0;
+  }
 
-        if (this.contentType === 'movies') {
-            this.contentService.getMovies(categoryId).subscribe({
-                next: (movies) => {
-                    this.movies = movies.slice(0, 100); // Limit for performance
-                    this.loading = false;
-                },
-                error: (err) => {
-                    console.error('Error loading movies:', err);
-                    this.loading = false;
-                }
-            });
-        } else {
-            this.contentService.getSeries(categoryId).subscribe({
-                next: (series) => {
-                    this.series = series.slice(0, 100);
-                    this.loading = false;
-                },
-                error: (err) => {
-                    console.error('Error loading series:', err);
-                    this.loading = false;
-                }
-            });
+
+  setContentType(type: 'movies' | 'series') {
+    this.contentType = type;
+    this.searchQuery = '';
+    this.selectedCategory = null;
+    this.loadCategories();
+    this.loadContent();
+  }
+
+  selectCategory(category: Category | null) {
+    this.selectedCategory = category;
+    this.loadContent();
+  }
+
+  loadCategories() {
+    const request = this.contentType === 'movies'
+      ? this.contentService.getMovieCategories()
+      : this.contentService.getSeriesCategories();
+
+    request.subscribe({
+      next: (cats: Category[]) => this.categories = cats.slice(0, 25),
+      error: (err: any) => console.error('Error loading categories:', err)
+    });
+  }
+
+  loadContent() {
+    this.loading = true;
+    this.searchQuery = ''; // Reset search on load
+    const categoryId = this.selectedCategory?.category_id;
+
+    // Use specific type based on contentType but handle as union
+    if (this.contentType === 'movies') {
+      this.contentService.getMovies(categoryId).subscribe({
+        next: (items: Movie[]) => {
+          this.allItems = items;
+          this.filterContent();
+          this.loading = false;
+        },
+        error: (err: any) => {
+          console.error('Error loading content:', err);
+          this.loading = false;
         }
-    }
-
-    isSelected(item: Movie | Series): boolean {
-        const id = 'stream_id' in item ? item.stream_id : item.series_id;
-        return this.selectedItems.some(i => {
-            const itemId = 'stream_id' in i ? i.stream_id : i.series_id;
-            return itemId === id;
-        });
-    }
-
-    toggleSelection(item: Movie | Series) {
-        if (this.isSelected(item)) {
-            const id = 'stream_id' in item ? item.stream_id : item.series_id;
-            this.selectedItems = this.selectedItems.filter(i => {
-                const itemId = 'stream_id' in i ? i.stream_id : i.series_id;
-                return itemId !== id;
-            });
-        } else {
-            this.selectedItems.push(item);
+      });
+    } else {
+      this.contentService.getSeries(categoryId).subscribe({
+        next: (items: Series[]) => {
+          this.allItems = items;
+          this.filterContent();
+          this.loading = false;
+        },
+        error: (err: any) => {
+          console.error('Error loading content:', err);
+          this.loading = false;
         }
+      });
+    }
+  }
+
+  filterContent() {
+    if (!this.searchQuery.trim()) {
+      this.filteredItems = this.allItems.slice(0, 100);
+      return;
     }
 
-    clearSelection() {
-        this.selectedItems = [];
-    }
+    const query = this.searchQuery.toLowerCase();
+    this.filteredItems = this.allItems
+      .filter(item => item.name.toLowerCase().includes(query))
+      .slice(0, 100);
+  }
 
-    downloadItem(item: Movie | Series) {
+  isInWishlist(item: Movie | Series): boolean {
+    const id = 'stream_id' in item ? item.stream_id : item.series_id;
+    return this.wishlist.some(i => {
+      const itemId = 'stream_id' in i ? i.stream_id : i.series_id;
+      return itemId === id;
+    });
+  }
+
+  toggleWishlist(item: Movie | Series) {
+    if (this.isInWishlist(item)) {
+      const id = 'stream_id' in item ? item.stream_id : item.series_id;
+      this.wishlist = this.wishlist.filter(i => {
+        const itemId = 'stream_id' in i ? i.stream_id : i.series_id;
+        return itemId !== id;
+      });
+    } else {
+      this.wishlist.push(item);
+    }
+  }
+
+  clearWishlist() {
+    this.wishlist = [];
+  }
+
+  downloadNow() {
+    this.downloadItems(this.wishlist, false);
+    this.clearWishlist();
+  }
+
+  scheduleDownload() {
+    this.downloadItems(this.wishlist, true);
+    this.clearWishlist();
+  }
+
+  downloadSingleItem(item: Movie | Series) {
+    this.downloadItems([item], false);
+  }
+
+  scheduleSingleItem(item: Movie | Series) {
+    this.downloadItems([item], true);
+  }
+
+  private downloadItems(items: (Movie | Series)[], scheduled: boolean) {
+    // Only support movies for now in this batch helper, or expand backend to handle both
+    // The DownloadCreate model supports content_type, but here we assume movies from browse?
+    // Actually the browse supports both.
+
+    const downloads: DownloadCreate[] = items
+      .map(item => {
         if ('stream_id' in item) {
-            const download: DownloadCreate = {
-                stream_id: String(item.stream_id),
-                title: item.name,
-                content_type: 'movie',
-                poster_url: item.stream_icon,
-                year: item.year,
-                file_extension: item.container_extension || 'mp4'
-            };
-
-            this.downloadService.createDownload(download).subscribe({
-                next: () => alert(`"${item.name}" agregado a la cola de descargas`),
-                error: (err) => alert(`Error: ${err.error?.detail || 'No se pudo agregar'}`)
-            });
+          // Movie
+          const movie = item as Movie;
+          return {
+            stream_id: String(movie.stream_id),
+            title: movie.name,
+            content_type: 'movie' as const,
+            poster_url: movie.stream_icon,
+            year: movie.year,
+            file_extension: movie.container_extension || 'mp4',
+            scheduled: scheduled
+          } as DownloadCreate;
+        } else {
+          return null;
         }
-    }
+      })
+      .filter((item): item is DownloadCreate => item !== null);
 
-    downloadSelected() {
-        const downloads: DownloadCreate[] = this.selectedItems
-            .filter(item => 'stream_id' in item)
-            .map(item => {
-                const movie = item as Movie;
-                return {
-                    stream_id: String(movie.stream_id),
-                    title: movie.name,
-                    content_type: 'movie' as const,
-                    poster_url: movie.stream_icon,
-                    year: movie.year,
-                    file_extension: movie.container_extension || 'mp4'
-                };
-            });
-
-        if (downloads.length > 0) {
-            this.downloadService.createBatchDownloads(downloads).subscribe({
-                next: (result) => {
-                    alert(`${result.length} elemento(s) agregados a la cola`);
-                    this.clearSelection();
-                },
-                error: (err) => alert(`Error: ${err.error?.detail || 'No se pudo agregar'}`)
-            });
-        }
+    if (downloads.length > 0) {
+      this.downloadService.createBatchDownloads(downloads).subscribe({
+        next: (result: any) => {
+          const msg = scheduled
+            ? `${result.length} elemento(s) programados para 1 AM`
+            : `${result.length} elemento(s) agregados a descarga`;
+          alert(msg);
+        },
+        error: (err: any) => alert(`Error: ${err.error?.detail || 'No se pudo agregar'}`)
+      });
+    } else {
+      if (items.some(i => !('stream_id' in i))) {
+        alert('Por ahora solo se pueden descargar películas directamente.');
+      }
     }
+  }
 }

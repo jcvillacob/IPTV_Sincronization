@@ -1,33 +1,40 @@
 import { Component } from '@angular/core';
 import { RouterOutlet, RouterLink, RouterLinkActive } from '@angular/router';
 import { CommonModule } from '@angular/common';
+import { LucideAngularModule, Film, Search, Download, HardDrive, Heart, Clock, Tv } from 'lucide-angular';
 import { StorageInfoComponent } from './components/storage-info/storage-info.component';
 
 @Component({
-    selector: 'app-root',
-    standalone: true,
-    imports: [CommonModule, RouterOutlet, RouterLink, RouterLinkActive, StorageInfoComponent],
-    template: `
+  selector: 'app-root',
+  standalone: true,
+  imports: [
+    CommonModule,
+    RouterOutlet,
+    RouterLink,
+    RouterLinkActive,
+    LucideAngularModule,
+    StorageInfoComponent
+  ],
+  template: `
     <div class="app-container">
       <!-- Sidebar -->
       <aside class="sidebar">
         <div class="logo">
-          <span class="logo-icon">📺</span>
-          <span class="logo-text">IPTV Sync</span>
+          <div class="logo-icon-wrapper">
+            <lucide-icon name="tv" [size]="24"></lucide-icon>
+          </div>
+          <span class="logo-text">IPTV<span class="text-gradient">Sync</span></span>
         </div>
         
         <nav class="nav">
           <a routerLink="/browse" routerLinkActive="active" class="nav-item">
-            <span class="nav-icon">🎬</span>
+            <lucide-icon name="film" [size]="20"></lucide-icon>
             <span>Explorar</span>
           </a>
-          <a routerLink="/search" routerLinkActive="active" class="nav-item">
-            <span class="nav-icon">🔍</span>
-            <span>Buscar</span>
-          </a>
           <a routerLink="/downloads" routerLinkActive="active" class="nav-item">
-            <span class="nav-icon">⬇️</span>
+            <lucide-icon name="download" [size]="20"></lucide-icon>
             <span>Descargas</span>
+            <span class="nav-badge" *ngIf="pendingCount > 0">{{ pendingCount }}</span>
           </a>
         </nav>
         
@@ -42,43 +49,49 @@ import { StorageInfoComponent } from './components/storage-info/storage-info.com
       </main>
     </div>
   `,
-    styles: [`
+  styles: [`
     .app-container {
       display: flex;
       min-height: 100vh;
     }
     
     .sidebar {
-      width: 240px;
-      background: linear-gradient(180deg, var(--bg-card) 0%, var(--bg-dark) 100%);
+      width: 260px;
+      background: linear-gradient(180deg, var(--bg-card-solid) 0%, var(--bg-darker) 100%);
       border-right: 1px solid var(--border);
-      padding: var(--spacing-lg);
+      padding: var(--spacing-xl);
       display: flex;
       flex-direction: column;
       position: fixed;
       height: 100vh;
+      z-index: 100;
     }
     
     .logo {
       display: flex;
       align-items: center;
-      gap: var(--spacing-sm);
-      padding-bottom: var(--spacing-lg);
-      border-bottom: 1px solid var(--border);
+      gap: var(--spacing-md);
+      padding-bottom: var(--spacing-xl);
       margin-bottom: var(--spacing-lg);
     }
     
-    .logo-icon {
-      font-size: 1.5rem;
+    .logo-icon-wrapper {
+      width: 42px;
+      height: 42px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+      border-radius: var(--radius-lg);
+      color: white;
+      box-shadow: var(--shadow-glow);
     }
     
     .logo-text {
-      font-size: 1.25rem;
+      font-size: 1.5rem;
       font-weight: 700;
-      background: linear-gradient(135deg, var(--primary-light) 0%, var(--secondary) 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
+      color: var(--text-primary);
+      letter-spacing: -0.025em;
     }
     
     .nav {
@@ -91,13 +104,15 @@ import { StorageInfoComponent } from './components/storage-info/storage-info.com
     .nav-item {
       display: flex;
       align-items: center;
-      gap: var(--spacing-sm);
-      padding: var(--spacing-sm) var(--spacing-md);
-      border-radius: var(--radius-md);
+      gap: var(--spacing-md);
+      padding: 0.875rem var(--spacing-lg);
+      border-radius: var(--radius-lg);
       color: var(--text-secondary);
       text-decoration: none;
       font-weight: 500;
-      transition: all 0.2s ease;
+      font-size: 0.9375rem;
+      transition: all var(--transition-normal);
+      position: relative;
     }
     
     .nav-item:hover {
@@ -111,8 +126,23 @@ import { StorageInfoComponent } from './components/storage-info/storage-info.com
       box-shadow: var(--shadow-glow);
     }
     
-    .nav-icon {
-      font-size: 1.1rem;
+    .nav-badge {
+      margin-left: auto;
+      min-width: 22px;
+      height: 22px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--accent);
+      color: white;
+      font-size: 0.75rem;
+      font-weight: 600;
+      border-radius: var(--radius-full);
+      padding: 0 6px;
+    }
+    
+    .nav-item.active .nav-badge {
+      background: rgba(255,255,255,0.25);
     }
     
     .sidebar-footer {
@@ -122,32 +152,27 @@ import { StorageInfoComponent } from './components/storage-info/storage-info.com
     
     .main-content {
       flex: 1;
-      margin-left: 240px;
-      padding: var(--spacing-xl);
+      margin-left: 260px;
+      padding: var(--spacing-xl) var(--spacing-2xl);
       min-height: 100vh;
     }
     
-    @media (max-width: 768px) {
+    @media (max-width: 1024px) {
       .sidebar {
-        width: 100%;
-        height: auto;
-        position: relative;
-        flex-direction: row;
-        padding: var(--spacing-md);
-      }
-      
-      .nav {
-        flex-direction: row;
+        width: 220px;
+        padding: var(--spacing-lg);
       }
       
       .main-content {
-        margin-left: 0;
-      }
-      
-      .sidebar-footer {
-        display: none;
+        margin-left: 220px;
+        padding: var(--spacing-lg);
       }
     }
   `]
 })
-export class AppComponent { }
+export class AppComponent {
+  pendingCount = 0;
+
+  // Icons for Lucide
+  readonly icons = { Film, Search, Download, HardDrive, Heart, Clock, Tv };
+}

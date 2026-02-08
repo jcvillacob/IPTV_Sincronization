@@ -1,15 +1,21 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+import asyncio
 
 from app.database import engine, Base
 from app.routers import categories, content, downloads, storage
+from app.services.download_manager import process_download_queue
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Create tables on startup
     Base.metadata.create_all(bind=engine)
+    
+    # Start download queue processor
+    asyncio.create_task(process_download_queue())
+    
     yield
 
 

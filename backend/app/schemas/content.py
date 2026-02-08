@@ -20,6 +20,7 @@ class DownloadStatus(str, Enum):
     COMPLETED = "completed"
     ERROR = "error"
     ARCHIVED = "archived"
+    SCHEDULED = "scheduled"
 
 
 class ContentType(str, Enum):
@@ -93,6 +94,7 @@ class DownloadCreate(BaseModel):
     poster_url: Optional[str] = None
     year: Optional[str] = None
     file_extension: Optional[str] = "mp4"
+    scheduled: Optional[bool] = False
 
 
 class DownloadResponse(BaseModel):
@@ -111,6 +113,8 @@ class DownloadResponse(BaseModel):
     error_message: Optional[str] = None
     poster_url: Optional[str] = None
     year: Optional[str] = None
+    scheduled: bool = False
+    scheduled_time: Optional[datetime] = None
     created_at: datetime
     completed_at: Optional[datetime] = None
 
