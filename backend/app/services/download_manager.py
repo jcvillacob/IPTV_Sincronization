@@ -92,7 +92,7 @@ class DownloadManager:
         if not url:
             return False
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
                 response = await client.get(url)
                 if response.status_code == 200:
                     save_path.write_bytes(response.content)
@@ -200,7 +200,7 @@ class DownloadManager:
             download.status = DownloadStatus.DOWNLOADING
             db.commit()
             
-            async with httpx.AsyncClient(timeout=None, headers={'User-Agent': 'VLC/3.0.18'}) as client:
+            async with httpx.AsyncClient(timeout=None, headers={'User-Agent': 'VLC/3.0.18'}, follow_redirects=True) as client:
                 async with client.stream('GET', url) as response:
                     if response.status_code != 200:
                         self._update_error(download, db, f"HTTP {response.status_code}")

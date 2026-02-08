@@ -18,7 +18,7 @@ class IPTVClient:
     
     async def _request(self, action: str, params: str = "") -> list | dict:
         url = self._build_api_url(action, params)
-        async with httpx.AsyncClient(headers=self.headers, timeout=30.0) as client:
+        async with httpx.AsyncClient(headers=self.headers, timeout=30.0, follow_redirects=True) as client:
             response = await client.get(url)
             if response.status_code == 200:
                 return response.json()
