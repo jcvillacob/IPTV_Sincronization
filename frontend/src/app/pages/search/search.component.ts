@@ -225,7 +225,7 @@ export class SearchComponent {
             const download: DownloadCreate = {
                 stream_id: String(item.stream_id),
                 title: item.name,
-                content_type: 'movie',
+                content_type: 'MOVIE',
                 poster_url: item.stream_icon,
                 year: item.year,
                 file_extension: item.container_extension || 'mp4'
@@ -246,7 +246,7 @@ export class SearchComponent {
                 return {
                     stream_id: String(movie.stream_id),
                     title: movie.name,
-                    content_type: 'movie' as const,
+                    content_type: 'MOVIE' as const,
                     poster_url: movie.stream_icon,
                     year: movie.year,
                     file_extension: movie.container_extension || 'mp4'

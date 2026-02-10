@@ -44,6 +44,35 @@ async def get_downloads(
     return downloads
 
 
+@router.post("/reschedule-all-paused")
+async def reschedule_all_paused(db: Session = Depends(get_db)):
+    """Reschedule all disk-full-paused downloads to next day 1 AM"""
+    paused = db.query(Download).filter(
+        Download.status == DownloadStatus.PAUSED,
+        Download.disk_full_paused == True
+    ).all()
+
+    if not paused:
+        return {"message": "No hay descargas pausadas por disco lleno", "count": 0}
+
+    next_time = get_next_1am()
+
+    for dl in paused:
+        dl.status = DownloadStatus.SCHEDULED
+        dl.scheduled = True
+        dl.scheduled_time = next_time
+        dl.disk_full_paused = False
+        dl.error_message = None
+
+    db.commit()
+
+    return {
+        "message": f"{len(paused)} descargas reprogramadas para {next_time.strftime('%Y-%m-%d %H:%M')}",
+        "count": len(paused),
+        "scheduled_time": next_time.isoformat()
+    }
+
+
 @router.get("/{download_id}", response_model=DownloadResponse)
 async def get_download(download_id: int, db: Session = Depends(get_db)):
     """Get a specific download by ID"""
@@ -162,8 +191,10 @@ async def resume_download(download_id: int, db: Session = Depends(get_db)):
         
     if download.status != DownloadStatus.PAUSED:
         raise HTTPException(status_code=400, detail="Download is not paused")
-        
+
     download.status = DownloadStatus.PENDING
+    download.disk_full_paused = False
+    download.error_message = None
     db.commit()
     return download
 

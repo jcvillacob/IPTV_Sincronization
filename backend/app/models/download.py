@@ -6,18 +6,18 @@ from app.database import Base
 
 
 class DownloadStatus(str, enum.Enum):
-    PENDING = "pending"
-    DOWNLOADING = "downloading"
-    COMPLETED = "completed"
-    ERROR = "error"
-    ARCHIVED = "archived"
-    SCHEDULED = "scheduled"
-    PAUSED = "paused"
+    PENDING = "PENDING"
+    DOWNLOADING = "DOWNLOADING"
+    COMPLETED = "COMPLETED"
+    ERROR = "ERROR"
+    ARCHIVED = "ARCHIVED"
+    SCHEDULED = "SCHEDULED"
+    PAUSED = "PAUSED"
 
 
 class ContentType(str, enum.Enum):
-    MOVIE = "movie"
-    EPISODE = "episode"
+    MOVIE = "MOVIE"
+    EPISODE = "EPISODE"
 
 
 class Download(Base):
@@ -47,6 +47,9 @@ class Download(Base):
     # Scheduled downloads (for 1 AM batch)
     scheduled = Column(Boolean, default=False)
     scheduled_time = Column(DateTime(timezone=True), nullable=True)
+
+    # Disk full protection
+    disk_full_paused = Column(Boolean, default=False)
     
     # Metadata
     poster_url = Column(String, nullable=True)

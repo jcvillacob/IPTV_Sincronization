@@ -1,16 +1,22 @@
 import os
 import re
+import shutil
 import asyncio
 import httpx
 from pathlib import Path
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.models.download import Download, DownloadStatus, ContentType
 from app.services.iptv_client import get_iptv_client
 from app.database import SessionLocal
+
+
+class DiskFullError(Exception):
+    """Raised when disk space drops below the minimum threshold during download"""
+    pass
 
 
 def sanitize_filename(name: str) -> str:
@@ -75,6 +81,16 @@ class DownloadManager:
         self.series_path = self.media_path / "Series"
         self.movies_path.mkdir(parents=True, exist_ok=True)
         self.series_path.mkdir(parents=True, exist_ok=True)
+
+    def _check_disk_space(self) -> bool:
+        """Return True if there is enough free disk space, False otherwise"""
+        settings = get_settings()
+        min_free_bytes = settings.min_free_space_mb * 1024 * 1024
+        try:
+            usage = shutil.disk_usage(str(self.media_path))
+            return usage.free >= min_free_bytes
+        except Exception:
+            return True  # If we can't check, don't block downloads
     
     def get_movie_folder_name(self, title: str, year: str = "") -> str:
         """Generate folder name for movie: Title_(Year)"""
@@ -169,11 +185,13 @@ class DownloadManager:
                 return True
             
             return False
-            
+
+        except DiskFullError:
+            raise
         except Exception as e:
             self._update_error(download, db, str(e))
             return False
-    
+
     async def download_episode(self, download: Download, db: Session) -> bool:
         """Download a series episode with Kodi structure"""
         try:
@@ -209,31 +227,33 @@ class DownloadManager:
                 return True
             
             return False
-            
+
+        except DiskFullError:
+            raise
         except Exception as e:
             self._update_error(download, db, str(e))
             return False
-    
+
     async def _download_file(self, url: str, save_path: Path, download: Download, db: Session) -> bool:
         """Download file with progress tracking"""
         try:
             download.status = DownloadStatus.DOWNLOADING
             db.commit()
-            
+
             async with httpx.AsyncClient(timeout=None, headers={'User-Agent': 'VLC/3.0.18'}, follow_redirects=True) as client:
                 async with client.stream('GET', url) as response:
                     if response.status_code != 200:
                         self._update_error(download, db, f"HTTP {response.status_code}")
                         return False
-                    
+
                     total_size = int(response.headers.get('content-length', 0))
                     downloaded = 0
-                    
+
                     with open(save_path, 'wb') as f:
                         async for chunk in response.aiter_bytes(chunk_size=1024*1024):
                             f.write(chunk)
                             downloaded += len(chunk)
-                            
+
                             # Periodically check status (every ~1MB)
                             if downloaded % (1024*1024) == 0:
                                 db.expire(download)
@@ -242,17 +262,27 @@ class DownloadManager:
                                     # Status changed (paused, cancelled, error)
                                     return False
 
+                                # Check disk space every ~1MB
+                                if not self._check_disk_space():
+                                    download.file_size = downloaded
+                                    if total_size > 0:
+                                        download.progress = int((downloaded / total_size) * 100)
+                                    db.commit()
+                                    raise DiskFullError(f"Espacio libre por debajo de {get_settings().min_free_space_mb}MB")
+
                             if total_size > 0:
                                 progress = int((downloaded / total_size) * 100)
                                 if progress != download.progress:
                                     download.progress = progress
                                     download.file_size = downloaded
                                     db.commit()
-                    
+
                     download.file_size = downloaded
                     db.commit()
                     return True
-                    
+
+        except DiskFullError:
+            raise
         except Exception as e:
             self._update_error(download, db, str(e))
             return False
@@ -264,53 +294,94 @@ class DownloadManager:
         db.commit()
 
 
+def _handle_disk_full(current_download: Download, db: Session):
+    """Handle disk full: pause current, pause all pending, unschedule all scheduled"""
+
+    # 1. Pause the current download (keep partial file)
+    current_download.status = DownloadStatus.PAUSED
+    current_download.disk_full_paused = True
+    current_download.error_message = "Disco lleno - descarga pausada automaticamente"
+
+    # 2. Pause all PENDING downloads
+    pending_downloads = db.query(Download).filter(
+        Download.status == DownloadStatus.PENDING
+    ).all()
+    for dl in pending_downloads:
+        dl.status = DownloadStatus.PAUSED
+        dl.disk_full_paused = True
+        dl.error_message = "Disco lleno - cola detenida"
+
+    # 3. Unschedule and pause all SCHEDULED downloads
+    scheduled_downloads = db.query(Download).filter(
+        Download.status == DownloadStatus.SCHEDULED
+    ).all()
+    for dl in scheduled_downloads:
+        dl.status = DownloadStatus.PAUSED
+        dl.scheduled = False
+        dl.scheduled_time = None
+        dl.disk_full_paused = True
+        dl.error_message = "Disco lleno - programacion cancelada"
+
+    db.commit()
+
+    total = 1 + len(pending_downloads) + len(scheduled_downloads)
+    print(f"DISCO LLENO: {total} descargas pausadas (1 activa + {len(pending_downloads)} pendientes + {len(scheduled_downloads)} programadas)")
+
+
 # Background task for processing downloads
 async def process_download_queue():
     """Process pending downloads one by one and check scheduled"""
     manager = DownloadManager()
-    
+
     print("Download queue processor started")
-    
+
     while True:
         try:
             db = SessionLocal()
             try:
                 # 1. Check for scheduled items that are due
-                now = datetime.now()
+                now = datetime.now(timezone.utc)
                 scheduled = db.query(Download).filter(
                     Download.status == DownloadStatus.SCHEDULED,
                     Download.scheduled_time <= now
                 ).all()
-                
+
                 if scheduled:
                     print(f"Activating {len(scheduled)} scheduled downloads")
                     for item in scheduled:
                         item.status = DownloadStatus.PENDING
-                        item.scheduled = False  # Mark as done scheduling
+                        item.scheduled = False
                     db.commit()
-                
-                # 2. Get next pending download
-                # Order by Priority DESC, then Created At ASC
+
+                # 2. Pre-check disk space before picking up new work
+                if not manager._check_disk_space():
+                    print("Espacio en disco por debajo del umbral, esperando...")
+                    db.close()
+                    await asyncio.sleep(30)
+                    continue
+
+                # 3. Get next pending download
                 pending = db.query(Download).filter(
                     Download.status == DownloadStatus.PENDING
                 ).order_by(Download.priority.desc(), Download.created_at.asc()).first()
-                
+
                 if pending:
                     print(f"Starting download: {pending.title}")
-                    if pending.content_type == ContentType.MOVIE:
-                        await manager.download_movie(pending, db)
-                    else:
-                        await manager.download_episode(pending, db)
-                else:
-                    # No pending downloads, wait 5 seconds
-                    pass
-                    
+                    try:
+                        if pending.content_type == ContentType.MOVIE:
+                            await manager.download_movie(pending, db)
+                        else:
+                            await manager.download_episode(pending, db)
+                    except DiskFullError as e:
+                        print(f"DISCO LLENO: {e}")
+                        _handle_disk_full(pending, db)
+
             finally:
                 db.close()
-                
+
             # Wait before next check
             await asyncio.sleep(5)
-            
+
         except Exception as e:
             print(f"Error in download queue: {e}")
             await asyncio.sleep(10)

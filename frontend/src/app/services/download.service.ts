@@ -50,4 +50,8 @@ export class DownloadService {
     archiveDownload(id: number): Observable<Download> {
         return this.http.post<Download>(`${this.apiUrl}/${id}/archive`, {});
     }
+
+    rescheduleAllPaused(): Observable<any> {
+        return this.http.post<any>(`${this.apiUrl}/reschedule-all-paused`, {});
+    }
 }

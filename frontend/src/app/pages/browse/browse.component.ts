@@ -538,7 +538,7 @@ export class BrowseComponent implements OnInit, OnDestroy {
           return {
             stream_id: String(movie.stream_id),
             title: movie.name,
-            content_type: 'movie' as const,
+            content_type: 'MOVIE' as const,
             poster_url: movie.stream_icon,
             year: movie.year,
             file_extension: movie.container_extension || 'mp4',

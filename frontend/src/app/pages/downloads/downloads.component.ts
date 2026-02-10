@@ -57,6 +57,23 @@ import { Download } from '../../models/content.model';
         </div>
       </div>
       
+      <!-- Disk Full Alert -->
+      <div class="disk-full-alert glass" *ngIf="diskFullPausedCount > 0">
+        <div class="alert-content">
+          <lucide-icon name="hard-drive" [size]="24"></lucide-icon>
+          <div class="alert-text">
+            <strong>Disco lleno</strong>
+            <p>{{ diskFullPausedCount }} descarga(s) pausada(s) por falta de espacio.</p>
+          </div>
+        </div>
+        <div class="alert-actions">
+          <button class="btn btn-primary btn-sm" (click)="rescheduleAll()">
+            <lucide-icon name="calendar-clock" [size]="16"></lucide-icon>
+            Reprogramar todo a la 1 AM
+          </button>
+        </div>
+      </div>
+
       <!-- Filter Tabs -->
       <div class="filter-section glass">
         <div class="filter-tabs">
@@ -106,7 +123,7 @@ import { Download } from '../../models/content.model';
         <div 
           class="download-item fade-in-up" 
           *ngFor="let download of filteredDownloads; let i = index; trackBy: trackByDownloadId"
-          [class.downloading]="download.status === 'downloading'"
+          [class.downloading]="download.status === 'DOWNLOADING'"
           [class.selected]="isSelected(download)"
           [style.animation-delay.ms]="i * 50"
           (click)="toggleSelection(download)">
@@ -119,7 +136,7 @@ import { Download } from '../../models/content.model';
           
           <div class="download-poster">
             <img [src]="download.poster_url || 'data:image/svg+xml,...'" [alt]="download.title">
-            <div class="poster-badge" *ngIf="download.status === 'downloading'">
+            <div class="poster-badge" *ngIf="download.status === 'DOWNLOADING'">
               <div class="spinner-sm"></div>
             </div>
           </div>
@@ -127,8 +144,8 @@ import { Download } from '../../models/content.model';
           <div class="download-info">
             <h4 class="download-title">{{ download.title }}</h4>
             <div class="download-meta">
-              <span class="badge" [ngClass]="getStatusClass(download.status)">
-                {{ getStatusLabel(download.status) }}
+              <span class="badge" [ngClass]="download.disk_full_paused ? 'badge-error' : getStatusClass(download.status)">
+                {{ download.disk_full_paused ? 'Disco lleno' : getStatusLabel(download.status) }}
               </span>
               <span *ngIf="download.year" class="year">{{ download.year }}</span>
               <span *ngIf="download.file_extension" class="extension">{{ download.file_extension }}</span>
@@ -138,7 +155,7 @@ import { Download } from '../../models/content.model';
             </div>
             
             <!-- Progress Bar -->
-            <div class="progress-container" *ngIf="download.status === 'downloading'">
+            <div class="progress-container" *ngIf="download.status === 'DOWNLOADING'">
               <div class="progress-bar">
                 <div class="progress-bar-fill" [style.width.%]="download.progress"></div>
               </div>
@@ -146,7 +163,7 @@ import { Download } from '../../models/content.model';
             </div>
             
             <!-- Error Message -->
-            <div class="error-message" *ngIf="download.status === 'error'">
+            <div class="error-message" *ngIf="download.status === 'ERROR'">
               <lucide-icon name="alert-circle" [size]="14"></lucide-icon>
               {{ download.error_message || 'Error desconocido' }}
             </div>
@@ -156,14 +173,14 @@ import { Download } from '../../models/content.model';
             <!-- Pause/Resume -->
             <button 
               class="btn btn-icon btn-ghost" 
-              *ngIf="download.status === 'downloading'"
+              *ngIf="download.status === 'DOWNLOADING'"
               (click)="pauseDownload(download)"
               title="Pausar">
               <lucide-icon name="pause-circle" [size]="18"></lucide-icon>
             </button>
             <button 
               class="btn btn-icon btn-ghost" 
-              *ngIf="download.status === 'paused'"
+              *ngIf="download.status === 'PAUSED'"
               (click)="resumeDownload(download)"
               title="Reanudar">
               <lucide-icon name="play-circle" [size]="18"></lucide-icon>
@@ -172,7 +189,7 @@ import { Download } from '../../models/content.model';
             <!-- Priority -->
             <button 
               class="btn btn-icon btn-ghost" 
-              *ngIf="['pending', 'paused'].includes(download.status)"
+              *ngIf="['PENDING', 'PAUSED'].includes(download.status)"
               (click)="setTopPriority(download)"
               title="Priorizar al máximo">
               <lucide-icon name="arrow-up-circle" [size]="18"></lucide-icon>
@@ -181,7 +198,7 @@ import { Download } from '../../models/content.model';
             <!-- Retry -->
             <button 
               class="btn btn-icon btn-ghost" 
-              *ngIf="download.status === 'error'"
+              *ngIf="download.status === 'ERROR'"
               (click)="retryDownload(download)"
               title="Reintentar">
               <lucide-icon name="refresh-cw" [size]="18"></lucide-icon>
@@ -499,12 +516,43 @@ import { Download } from '../../models/content.model';
     .empty-state .btn {
       margin-top: var(--spacing-lg);
     }
+
+    .disk-full-alert {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: var(--spacing-lg) var(--spacing-xl);
+      border-radius: var(--radius-xl);
+      margin-bottom: var(--spacing-lg);
+      border: 1px solid var(--error);
+      background: rgba(239, 68, 68, 0.1);
+    }
+
+    .alert-content {
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-md);
+      color: var(--error);
+    }
+
+    .alert-text p {
+      margin: 0;
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+    }
+
+    .alert-actions .btn {
+      display: flex;
+      align-items: center;
+      gap: var(--spacing-xs);
+    }
   `]
 })
 export class DownloadsComponent implements OnInit, OnDestroy {
   downloads: Download[] = [];
   selectedDownloads: Download[] = [];
   filter: 'all' | 'active' | 'scheduled' | 'completed' | 'error' = 'all';
+  diskFullPausedCount: number = 0;
   private refreshInterval: any;
 
   constructor(private downloadService: DownloadService) { }
@@ -524,29 +572,29 @@ export class DownloadsComponent implements OnInit, OnDestroy {
     switch (this.filter) {
       case 'active':
         return this.downloads.filter(d =>
-          d.status === 'pending' || d.status === 'downloading'
+          d.status === 'PENDING' || d.status === 'DOWNLOADING'
         );
       case 'scheduled':
         return this.downloads.filter(d => (d as any).scheduled === true);
       case 'completed':
-        return this.downloads.filter(d => d.status === 'completed');
+        return this.downloads.filter(d => d.status === 'COMPLETED');
       case 'error':
-        return this.downloads.filter(d => d.status === 'error');
+        return this.downloads.filter(d => d.status === 'ERROR');
       default:
         return this.downloads;
     }
   }
 
   get pendingCount(): number {
-    return this.downloads.filter(d => d.status === 'pending').length;
+    return this.downloads.filter(d => d.status === 'PENDING').length;
   }
 
   get downloadingCount(): number {
-    return this.downloads.filter(d => d.status === 'downloading').length;
+    return this.downloads.filter(d => d.status === 'DOWNLOADING').length;
   }
 
   get completedCount(): number {
-    return this.downloads.filter(d => d.status === 'completed').length;
+    return this.downloads.filter(d => d.status === 'COMPLETED').length;
   }
 
   get scheduledCount(): number {
@@ -574,9 +622,13 @@ export class DownloadsComponent implements OnInit, OnDestroy {
               existing.file_size = newDl.file_size;
               existing.error_message = newDl.error_message;
               existing.file_path = newDl.file_path;
+              existing.disk_full_paused = newDl.disk_full_paused;
+              existing.scheduled = newDl.scheduled;
+              existing.scheduled_time = newDl.scheduled_time;
             }
           });
         }
+        this.diskFullPausedCount = newDownloads.filter(d => d.disk_full_paused).length;
       },
       error: (err: any) => console.error('Error loading downloads:', err)
     });
@@ -611,25 +663,38 @@ export class DownloadsComponent implements OnInit, OnDestroy {
 
   getStatusClass(status: string): string {
     switch (status) {
-      case 'completed': return 'badge-success';
-      case 'downloading': return 'badge-info';
-      case 'pending': return 'badge-warning';
-      case 'paused': return 'badge-warning'; // Reuse warning or add specific style
-      case 'error': return 'badge-error';
+      case 'COMPLETED': return 'badge-success';
+      case 'DOWNLOADING': return 'badge-info';
+      case 'PENDING': return 'badge-warning';
+      case 'PAUSED': return 'badge-warning';
+      case 'ERROR': return 'badge-error';
       default: return 'badge-purple';
     }
   }
 
   getStatusLabel(status: string): string {
     switch (status) {
-      case 'completed': return 'Completado';
-      case 'downloading': return 'Descargando';
-      case 'pending': return 'Pendiente';
-      case 'paused': return 'Pausado';
-      case 'error': return 'Error';
-      case 'archived': return 'Archivado';
+      case 'COMPLETED': return 'Completado';
+      case 'DOWNLOADING': return 'Descargando';
+      case 'PENDING': return 'Pendiente';
+      case 'PAUSED': return 'Pausado';
+      case 'ERROR': return 'Error';
+      case 'ARCHIVED': return 'Archivado';
+      case 'SCHEDULED': return 'Programado';
       default: return status;
     }
+  }
+
+  rescheduleAll() {
+    if (!confirm('¿Reprogramar todas las descargas pausadas por disco lleno para mañana a la 1 AM?')) return;
+
+    this.downloadService.rescheduleAllPaused().subscribe({
+      next: (result: any) => {
+        alert(result.message);
+        this.loadDownloads();
+      },
+      error: (err: any) => alert(`Error: ${err.error?.detail || 'No se pudo reprogramar'}`)
+    });
   }
 
   formatSize(bytes: number): string {

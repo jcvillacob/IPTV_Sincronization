@@ -19,11 +19,11 @@ import { Movie, Series } from '../../models/content.model';
         
         <!-- Overlay with actions -->
         <div class="overlay" 
-             [class.downloading]="downloadStatus === 'downloading'"
+             [class.downloading]="downloadStatus === 'DOWNLOADING'"
              [class.active-status]="downloadStatus && downloadStatus !== 'downloading'">
           
           <!-- Download Progress State -->
-          <div class="download-state" *ngIf="downloadStatus === 'downloading'">
+          <div class="download-state" *ngIf="downloadStatus === 'DOWNLOADING'">
             <div class="progress-circle">
               <span class="progress-value">{{ downloadProgress }}%</span>
               <svg viewBox="0 0 36 36" class="circular-chart">
@@ -44,7 +44,7 @@ import { Movie, Series } from '../../models/content.model';
           </div>
 
           <!-- Completed State -->
-          <div class="download-state" *ngIf="downloadStatus === 'completed'">
+          <div class="download-state" *ngIf="downloadStatus === 'COMPLETED'">
             <div class="status-icon success">
               <lucide-icon name="check" [size]="32"></lucide-icon>
             </div>
@@ -52,11 +52,11 @@ import { Movie, Series } from '../../models/content.model';
           </div>
 
           <!-- Pending/Scheduled State -->
-          <div class="download-state" *ngIf="downloadStatus === 'pending' || downloadStatus === 'scheduled'">
+          <div class="download-state" *ngIf="downloadStatus === 'PENDING' || downloadStatus === 'SCHEDULED'">
              <div class="status-icon warning">
-              <lucide-icon [name]="downloadStatus === 'scheduled' ? 'calendar-clock' : 'clock'" [size]="32"></lucide-icon>
+              <lucide-icon [name]="downloadStatus === 'SCHEDULED' ? 'calendar-clock' : 'clock'" [size]="32"></lucide-icon>
             </div>
-            <span class="status-text">{{ downloadStatus === 'scheduled' ? 'Programado' : 'Pendiente' }}</span>
+            <span class="status-text">{{ downloadStatus === 'SCHEDULED' ? 'Programado' : 'Pendiente' }}</span>
           </div>
           
           <!-- Default Actions (only if not downloading/completed) -->

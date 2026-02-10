@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     # Paths
     media_path: str = "/media/usb/Compartida_Kodi"
     archive_path: str = "/archive"
+
+    # Disk space protection
+    min_free_space_mb: int = 500
     
     class Config:
         env_file = ".env"

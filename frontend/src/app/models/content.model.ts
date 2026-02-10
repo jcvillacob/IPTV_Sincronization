@@ -48,7 +48,7 @@ export interface SeriesDetail {
 export interface DownloadCreate {
     stream_id: string;
     title: string;
-    content_type: 'movie' | 'episode';
+    content_type: 'MOVIE' | 'EPISODE';
     series_name?: string;
     season?: number;
     episode?: number;
@@ -62,14 +62,14 @@ export interface Download {
     id: number;
     stream_id: string;
     title: string;
-    content_type: 'movie' | 'episode';
+    content_type: 'MOVIE' | 'EPISODE';
     series_name?: string;
     season?: number;
     episode?: number;
     file_path?: string;
     file_extension?: string;
     file_size: number;
-    status: 'pending' | 'downloading' | 'completed' | 'error' | 'archived' | 'scheduled' | 'paused';
+    status: 'PENDING' | 'DOWNLOADING' | 'COMPLETED' | 'ERROR' | 'ARCHIVED' | 'SCHEDULED' | 'PAUSED';
     progress: number;
     error_message?: string;
     poster_url?: string;
@@ -79,6 +79,7 @@ export interface Download {
     scheduled?: boolean;
     scheduled_time?: string;
     priority?: number;
+    disk_full_paused?: boolean;
 }
 
 export interface StorageInfo {

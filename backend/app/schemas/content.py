@@ -15,18 +15,18 @@ def parse_optional_float(v: Any) -> Optional[float]:
 
 
 class DownloadStatus(str, Enum):
-    PENDING = "pending"
-    DOWNLOADING = "downloading"
-    COMPLETED = "completed"
-    ERROR = "error"
-    ARCHIVED = "archived"
-    SCHEDULED = "scheduled"
-    PAUSED = "paused"
+    PENDING = "PENDING"
+    DOWNLOADING = "DOWNLOADING"
+    COMPLETED = "COMPLETED"
+    ERROR = "ERROR"
+    ARCHIVED = "ARCHIVED"
+    SCHEDULED = "SCHEDULED"
+    PAUSED = "PAUSED"
 
 
 class ContentType(str, Enum):
-    MOVIE = "movie"
-    EPISODE = "episode"
+    MOVIE = "MOVIE"
+    EPISODE = "EPISODE"
 
 
 # Categories
@@ -117,6 +117,7 @@ class DownloadResponse(BaseModel):
     scheduled: bool = False
     scheduled_time: Optional[datetime] = None
     priority: int = 0
+    disk_full_paused: bool = False
     created_at: datetime
     completed_at: Optional[datetime] = None
 
