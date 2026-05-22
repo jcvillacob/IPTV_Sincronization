@@ -90,8 +90,11 @@ class DownloadCreate(BaseModel):
     title: str
     content_type: ContentType
     series_name: Optional[str] = None
+    series_id: Optional[int] = None
     season: Optional[int] = None
     episode: Optional[int] = None
+    category_id: Optional[str] = None
+    category_name: Optional[str] = None
     poster_url: Optional[str] = None
     year: Optional[str] = None
     file_extension: Optional[str] = "mp4"
@@ -104,8 +107,11 @@ class DownloadResponse(BaseModel):
     title: str
     content_type: ContentType
     series_name: Optional[str] = None
+    series_id: Optional[int] = None
     season: Optional[int] = None
     episode: Optional[int] = None
+    category_id: Optional[str] = None
+    category_name: Optional[str] = None
     file_path: Optional[str] = None
     file_extension: Optional[str] = None
     file_size: int = 0
@@ -117,6 +123,11 @@ class DownloadResponse(BaseModel):
     scheduled: bool = False
     scheduled_time: Optional[datetime] = None
     priority: int = 0
+    retry_count: int = 0
+    next_retry_at: Optional[datetime] = None
+    last_attempt_at: Optional[datetime] = None
+    last_progress_at: Optional[datetime] = None
+    last_error_at: Optional[datetime] = None
     disk_full_paused: bool = False
     created_at: datetime
     completed_at: Optional[datetime] = None

@@ -50,8 +50,11 @@ export interface DownloadCreate {
     title: string;
     content_type: 'MOVIE' | 'EPISODE';
     series_name?: string;
+    series_id?: number;
     season?: number;
     episode?: number;
+    category_id?: string;
+    category_name?: string;
     poster_url?: string;
     year?: string;
     file_extension?: string;
@@ -64,8 +67,11 @@ export interface Download {
     title: string;
     content_type: 'MOVIE' | 'EPISODE';
     series_name?: string;
+    series_id?: number;
     season?: number;
     episode?: number;
+    category_id?: string;
+    category_name?: string;
     file_path?: string;
     file_extension?: string;
     file_size: number;
@@ -79,6 +85,11 @@ export interface Download {
     scheduled?: boolean;
     scheduled_time?: string;
     priority?: number;
+    retry_count?: number;
+    next_retry_at?: string;
+    last_attempt_at?: string;
+    last_progress_at?: string;
+    last_error_at?: string;
     disk_full_paused?: boolean;
 }
 

@@ -28,8 +28,17 @@ services:
       - IPTV_BASE_URL=${IPTV_BASE_URL}
       - IPTV_USER=${IPTV_USER}
       - IPTV_PASS=${IPTV_PASS}
+      - SCHEDULE_TIMEZONE=${SCHEDULE_TIMEZONE:-UTC}
       - MEDIA_PATH=/media/usb/Compartida_Kodi
       - ARCHIVE_PATH=/archive
+      - MAX_CONCURRENT_DOWNLOADS=${MAX_CONCURRENT_DOWNLOADS:-3}
+      - DOWNLOAD_STALL_TIMEOUT_SECONDS=${DOWNLOAD_STALL_TIMEOUT_SECONDS:-180}
+      - DOWNLOAD_MAX_AUTO_RETRIES=${DOWNLOAD_MAX_AUTO_RETRIES:-6}
+      - DOWNLOAD_RETRY_BASE_SECONDS=${DOWNLOAD_RETRY_BASE_SECONDS:-5}
+      - DOWNLOAD_RETRY_MAX_SECONDS=${DOWNLOAD_RETRY_MAX_SECONDS:-120}
+      - DOWNLOAD_CONNECT_TIMEOUT_SECONDS=${DOWNLOAD_CONNECT_TIMEOUT_SECONDS:-15}
+      - DOWNLOAD_READ_TIMEOUT_SECONDS=${DOWNLOAD_READ_TIMEOUT_SECONDS:-45}
+      - DOWNLOAD_PROGRESS_COMMIT_INTERVAL_SECONDS=${DOWNLOAD_PROGRESS_COMMIT_INTERVAL_SECONDS:-2}
     volumes:
       - ./backend:/app
       - ${USB_MOUNT_PATH:-/media/usb}:/media/usb
@@ -49,7 +58,16 @@ services:
       - /app/node_modules
     depends_on:
       - backend
-    command: ng serve --host 0.0.0.0 --poll 2000
+    command: ng serve --host 0.0.0.0 --poll 2000 --allowed-hosts iptv.jcvillacob.online
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: iptv_cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate --config /etc/cloudflared/config.yml run
+    volumes:
+      - ./.cloudflared:/etc/cloudflared:ro
+    depends_on:
+      - frontend
 
 # Global volumes section removed as we are using bind mounts for all persistent data
-

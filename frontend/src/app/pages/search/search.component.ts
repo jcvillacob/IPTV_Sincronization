@@ -226,6 +226,7 @@ export class SearchComponent {
                 stream_id: String(item.stream_id),
                 title: item.name,
                 content_type: 'MOVIE',
+                category_id: item.category_id,
                 poster_url: item.stream_icon,
                 year: item.year,
                 file_extension: item.container_extension || 'mp4'
@@ -247,6 +248,7 @@ export class SearchComponent {
                     stream_id: String(movie.stream_id),
                     title: movie.name,
                     content_type: 'MOVIE' as const,
+                    category_id: movie.category_id,
                     poster_url: movie.stream_icon,
                     year: movie.year,
                     file_extension: movie.container_extension || 'mp4'

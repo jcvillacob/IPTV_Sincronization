@@ -1,0 +1,6 @@
+tunnel: b3b64854-c626-45ba-856c-1142d53c7e8b
+credentials-file: /etc/cloudflared/b3b64854-c626-45ba-856c-1142d53c7e8b.json
+ingress:
+  - hostname: iptv.jcvillacob.online
+    service: http://frontend:4200
+  - service: http_status:404

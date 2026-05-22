@@ -2,11 +2,11 @@ import { Component, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { LucideAngularModule } from 'lucide-angular';
-import { Subscription, interval } from 'rxjs';
-import { startWith, switchMap } from 'rxjs/operators';
+import { Subscription, interval, forkJoin, Subject, of } from 'rxjs';
+import { startWith, switchMap, map, debounceTime, distinctUntilChanged, catchError } from 'rxjs/operators';
 import { ContentService } from '../../services/content.service';
 import { DownloadService } from '../../services/download.service';
-import { Category, Movie, Series, DownloadCreate, Download } from '../../models/content.model';
+import { Category, Movie, Series, SeriesDetail, DownloadCreate, Download } from '../../models/content.model';
 import { MovieCardComponent } from '../../components/movie-card/movie-card.component';
 
 @Component({
@@ -31,7 +31,7 @@ import { MovieCardComponent } from '../../components/movie-card/movie-card.compo
             type="text"
             class="input input-lg"
             [(ngModel)]="searchQuery"
-            (input)="filterContent()"
+            (input)="onSearchInput()"
             placeholder="Buscar por nombre...">
         </div>
         
@@ -50,6 +50,18 @@ import { MovieCardComponent } from '../../components/movie-card/movie-card.compo
             <lucide-icon name="tv" [size]="18"></lucide-icon>
             Series
           </button>
+        </div>
+
+        <div class="sort-controls">
+          <select class="sort-select" [(ngModel)]="sortBy" (change)="filterContent()">
+            <option value="name">Nombre</option>
+            <option value="year">Año</option>
+            <option value="rating">Valoración</option>
+          </select>
+          <select class="sort-select" [(ngModel)]="sortDirection" (change)="filterContent()">
+            <option value="desc">Mayor a menor</option>
+            <option value="asc">Menor a mayor</option>
+          </select>
         </div>
       </div>
       
@@ -164,6 +176,7 @@ import { MovieCardComponent } from '../../components/movie-card/movie-card.compo
       border-radius: var(--radius-xl);
       margin-bottom: var(--spacing-lg);
       align-items: center;
+      flex-wrap: wrap;
     }
     
     .search-wrapper {
@@ -217,6 +230,23 @@ import { MovieCardComponent } from '../../components/movie-card/movie-card.compo
       background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
       color: white;
       box-shadow: var(--shadow-sm);
+    }
+
+    .sort-controls {
+      display: flex;
+      gap: var(--spacing-sm);
+      margin-left: auto;
+    }
+
+    .sort-select {
+      min-width: 150px;
+      height: 40px;
+      border-radius: var(--radius-md);
+      border: 1px solid var(--border);
+      background: var(--bg-input);
+      color: var(--text-primary);
+      padding: 0 0.625rem;
+      font-size: 0.85rem;
     }
     
     .categories-section {
@@ -313,6 +343,16 @@ import { MovieCardComponent } from '../../components/movie-card/movie-card.compo
       .type-toggle {
         width: 100%;
       }
+
+      .sort-controls {
+        width: 100%;
+        margin-left: 0;
+      }
+
+      .sort-select {
+        flex: 1;
+        min-width: 0;
+      }
        
       .toggle-btn {
         flex: 1;
@@ -337,15 +377,22 @@ export class BrowseComponent implements OnInit, OnDestroy {
   categories: Category[] = [];
   selectedCategory: Category | null = null;
   allItems: (Movie | Series)[] = [];
+  globalSearchItems: (Movie | Series)[] = [];
+  usingGlobalSearch = false;
   filteredItems: (Movie | Series)[] = [];
   matchedItems: (Movie | Series)[] = []; // Store full results before pagination
   wishlist: (Movie | Series)[] = [];
   searchQuery = '';
+  sortBy: 'name' | 'year' | 'rating' = 'name';
+  sortDirection: 'asc' | 'desc' = 'desc';
   loading = false;
   displayLimit = 50;
 
   downloadSubscription?: Subscription;
+  searchDebounceSubscription?: Subscription;
+  searchInput$ = new Subject<string>();
   activeDownloads: Map<string, Download> = new Map();
+  seriesDownloads: Map<string, Download[]> = new Map();
 
   constructor(
     private contentService: ContentService,
@@ -356,11 +403,15 @@ export class BrowseComponent implements OnInit, OnDestroy {
     this.loadCategories();
     this.loadContent();
     this.startDownloadPolling();
+    this.startSearchDebounce();
   }
 
   ngOnDestroy() {
     if (this.downloadSubscription) {
       this.downloadSubscription.unsubscribe();
+    }
+    if (this.searchDebounceSubscription) {
+      this.searchDebounceSubscription.unsubscribe();
     }
   }
 
@@ -371,9 +422,15 @@ export class BrowseComponent implements OnInit, OnDestroy {
     ).subscribe({
       next: (downloads: Download[]) => {
         this.activeDownloads.clear();
+        this.seriesDownloads.clear();
         downloads.forEach((d: Download) => {
           if (d.stream_id) {
             this.activeDownloads.set(d.stream_id, d);
+          }
+          if (d.content_type === 'EPISODE') {
+            const key = this.getSeriesKeyFromDownload(d);
+            if (!this.seriesDownloads.has(key)) this.seriesDownloads.set(key, []);
+            this.seriesDownloads.get(key)!.push(d);
           }
         });
       },
@@ -386,7 +443,17 @@ export class BrowseComponent implements OnInit, OnDestroy {
       const download = this.activeDownloads.get(String(item.stream_id));
       return download ? download.status : undefined;
     }
-    return undefined;
+
+    const episodes = this.getSeriesEpisodes(item);
+    if (episodes.length === 0) return undefined;
+
+    const total = episodes.length;
+    const completed = episodes.filter(ep => ep.status === 'COMPLETED').length;
+
+    if (completed === total) return 'COMPLETED';
+    if (episodes.some(ep => ep.status === 'DOWNLOADING')) return 'DOWNLOADING';
+    if (episodes.some(ep => ep.status === 'SCHEDULED')) return 'SCHEDULED';
+    return 'PENDING';
   }
 
   getDownloadProgress(item: Movie | Series): number {
@@ -394,7 +461,15 @@ export class BrowseComponent implements OnInit, OnDestroy {
       const download = this.activeDownloads.get(String(item.stream_id));
       return download ? download.progress : 0;
     }
-    return 0;
+
+    const episodes = this.getSeriesEpisodes(item);
+    if (episodes.length === 0) return 0;
+    const total = episodes.reduce((sum, ep) => sum + (ep.progress || 0), 0);
+    return Math.round(total / episodes.length);
+  }
+
+  onSearchInput() {
+    this.searchInput$.next(this.searchQuery);
   }
 
 
@@ -424,8 +499,9 @@ export class BrowseComponent implements OnInit, OnDestroy {
 
   loadContent() {
     this.loading = true;
-    this.loading = true;
     this.searchQuery = ''; // Reset search on load
+    this.usingGlobalSearch = false;
+    this.globalSearchItems = [];
     this.displayLimit = 50; // Reset pagination
     const categoryId = this.selectedCategory?.category_id;
 
@@ -458,20 +534,86 @@ export class BrowseComponent implements OnInit, OnDestroy {
   }
 
   filterContent() {
+    const query = this.searchQuery.trim().toLowerCase();
+    if (!query || query.length < 3) {
+      this.usingGlobalSearch = false;
+    }
+
+    const sourceItems = this.usingGlobalSearch ? this.globalSearchItems : this.allItems;
+
     // Reset limit when searching to show fresh results
     if (this.searchQuery && this.filteredItems.length === this.matchedItems.length && this.displayLimit > 50) {
       this.displayLimit = 50;
     }
 
-    if (!this.searchQuery.trim()) {
-      this.matchedItems = this.allItems;
+    if (!query) {
+      this.matchedItems = [...sourceItems];
     } else {
-      const query = this.searchQuery.toLowerCase();
-      this.matchedItems = this.allItems
+      this.matchedItems = sourceItems
         .filter(item => item.name.toLowerCase().includes(query));
     }
 
+    this.applySorting();
     this.updateDisplay();
+  }
+
+  private startSearchDebounce() {
+    this.searchDebounceSubscription = this.searchInput$.pipe(
+      map((q: string) => q.trim()),
+      debounceTime(400),
+      distinctUntilChanged(),
+      switchMap((query: string) => {
+        if (!query) {
+          this.usingGlobalSearch = false;
+          this.globalSearchItems = [];
+          this.loading = false;
+          this.filterContent();
+          return of(null);
+        }
+
+        if (query.length < 3) {
+          this.usingGlobalSearch = false;
+          this.globalSearchItems = [];
+          this.loading = false;
+          this.filterContent();
+          return of(null);
+        }
+
+        this.loading = true;
+        return this.contentService.search(query).pipe(
+          map((result: any) => ({ query, result })),
+          catchError((err: any) => {
+            console.error('Error global search:', err);
+            return of({ query, result: { movies: [], series: [] } });
+          })
+        );
+      })
+    ).subscribe((payload: any) => {
+      if (!payload) {
+        return;
+      }
+
+      const resultItems: (Movie | Series)[] = this.contentType === 'movies'
+        ? payload.result.movies
+        : payload.result.series;
+
+      if (this.selectedCategory?.category_id) {
+        const selectedCat = this.selectedCategory.category_id;
+        this.globalSearchItems = resultItems.filter((item: Movie | Series) => {
+          const categoryId = 'category_id' in item ? item.category_id : undefined;
+          return String(categoryId || '') === String(selectedCat);
+        });
+      } else {
+        this.globalSearchItems = resultItems;
+      }
+
+      this.usingGlobalSearch = true;
+      this.matchedItems = [...this.globalSearchItems];
+      this.displayLimit = 50;
+      this.applySorting();
+      this.updateDisplay();
+      this.loading = false;
+    });
   }
 
   updateDisplay() {
@@ -481,6 +623,68 @@ export class BrowseComponent implements OnInit, OnDestroy {
   loadMore() {
     this.displayLimit += 50;
     this.updateDisplay();
+  }
+
+  private applySorting() {
+    const direction = this.sortDirection === 'asc' ? 1 : -1;
+    this.matchedItems.sort((a, b) => {
+      let aValue: string | number = '';
+      let bValue: string | number = '';
+
+      if (this.sortBy === 'name') {
+        aValue = (a.name || '').toLowerCase();
+        bValue = (b.name || '').toLowerCase();
+      } else if (this.sortBy === 'year') {
+        aValue = this.getYearValue(a);
+        bValue = this.getYearValue(b);
+      } else {
+        aValue = this.getRatingValue(a);
+        bValue = this.getRatingValue(b);
+      }
+
+      if (typeof aValue === 'string' && typeof bValue === 'string') {
+        return aValue.localeCompare(bValue) * direction;
+      }
+
+      return ((Number(aValue) - Number(bValue)) * direction);
+    });
+  }
+
+  private getYearValue(item: Movie | Series): number {
+    const raw = 'year' in item ? item.year : undefined;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  private getRatingValue(item: Movie | Series): number {
+    if ('stream_id' in item) {
+      const movieRating = item.rating_5based ?? item.rating;
+      const parsed = Number(movieRating);
+      return Number.isFinite(parsed) ? parsed : 0;
+    }
+    const seriesRating = Number(item.rating);
+    return Number.isFinite(seriesRating) ? seriesRating : 0;
+  }
+
+  private getSeriesKeyFromSeries(series: Series): string {
+    if (series.series_id !== undefined && series.series_id !== null) {
+      return `id:${series.series_id}`;
+    }
+    return `name:${(series.name || '').trim().toLowerCase().replace(/\s+/g, ' ')}`;
+  }
+
+  private getSeriesKeyFromDownload(download: Download): string {
+    if (download.series_id !== undefined && download.series_id !== null) {
+      return `id:${download.series_id}`;
+    }
+    return `name:${(download.series_name || '').trim().toLowerCase().replace(/\s+/g, ' ')}`;
+  }
+
+  private getSeriesEpisodes(series: Series): Download[] {
+    const byId = this.seriesDownloads.get(this.getSeriesKeyFromSeries(series)) || [];
+    if (byId.length > 0) return byId;
+    const byName = this.seriesDownloads.get(`name:${(series.name || '').trim().toLowerCase().replace(/\s+/g, ' ')}`) || [];
+    return byName;
   }
 
   isInWishlist(item: Movie | Series): boolean {
@@ -526,44 +730,69 @@ export class BrowseComponent implements OnInit, OnDestroy {
   }
 
   private downloadItems(items: (Movie | Series)[], scheduled: boolean) {
-    // Only support movies for now in this batch helper, or expand backend to handle both
-    // The DownloadCreate model supports content_type, but here we assume movies from browse?
-    // Actually the browse supports both.
+    const movies = items.filter(i => 'stream_id' in i) as Movie[];
+    const seriesList = items.filter(i => !('stream_id' in i)) as Series[];
 
-    const downloads: DownloadCreate[] = items
-      .map(item => {
-        if ('stream_id' in item) {
-          // Movie
-          const movie = item as Movie;
-          return {
-            stream_id: String(movie.stream_id),
-            title: movie.name,
-            content_type: 'MOVIE' as const,
-            poster_url: movie.stream_icon,
-            year: movie.year,
-            file_extension: movie.container_extension || 'mp4',
-            scheduled: scheduled
-          } as DownloadCreate;
-        } else {
-          return null;
-        }
-      })
-      .filter((item): item is DownloadCreate => item !== null);
+    const movieDownloads: DownloadCreate[] = movies.map(movie => ({
+      stream_id: String(movie.stream_id),
+      title: movie.name,
+      content_type: 'MOVIE' as const,
+      category_id: movie.category_id,
+      poster_url: movie.stream_icon,
+      year: movie.year,
+      file_extension: movie.container_extension || 'mp4',
+      scheduled: scheduled
+    }));
 
-    if (downloads.length > 0) {
-      this.downloadService.createBatchDownloads(downloads).subscribe({
-        next: (result: any) => {
-          const msg = scheduled
-            ? `${result.length} elemento(s) programados para 1 AM`
-            : `${result.length} elemento(s) agregados a descarga`;
-          alert(msg);
-        },
-        error: (err: any) => alert(`Error: ${err.error?.detail || 'No se pudo agregar'}`)
-      });
-    } else {
-      if (items.some(i => !('stream_id' in i))) {
-        alert('Por ahora solo se pueden descargar películas directamente.');
-      }
+    if (seriesList.length === 0) {
+      this.sendDownloads(movieDownloads, scheduled);
+      return;
     }
+
+    const seriesRequests = seriesList.map(series =>
+      this.contentService.getSeriesInfo(series.series_id).pipe(
+        map((detail: SeriesDetail) => ({ series, detail }))
+      )
+    );
+
+    forkJoin(seriesRequests).subscribe({
+      next: (results: Array<{ series: Series; detail: SeriesDetail }>) => {
+        const episodeDownloads: DownloadCreate[] = [];
+        for (const { series, detail } of results) {
+          for (const season of detail.seasons) {
+            for (const episode of season.episodes) {
+              episodeDownloads.push({
+                stream_id: String(episode.id),
+                title: episode.title || `Episodio ${episode.episode_num}`,
+                content_type: 'EPISODE' as const,
+                series_name: series.name,
+                series_id: series.series_id,
+                season: season.season_number,
+                episode: episode.episode_num,
+                category_id: series.category_id,
+                poster_url: series.cover,
+                file_extension: episode.container_extension || 'mkv',
+                scheduled: scheduled
+              });
+            }
+          }
+        }
+        this.sendDownloads([...movieDownloads, ...episodeDownloads], scheduled);
+      },
+      error: (err: any) => alert(`Error al obtener info de la serie: ${err.error?.detail || 'No se pudo obtener información'}`)
+    });
+  }
+
+  private sendDownloads(downloads: DownloadCreate[], scheduled: boolean) {
+    if (downloads.length === 0) return;
+    this.downloadService.createBatchDownloads(downloads).subscribe({
+      next: (result: any) => {
+        const msg = scheduled
+          ? `${result.length} elemento(s) programados para 1 AM`
+          : `${result.length} elemento(s) agregados a descarga`;
+        alert(msg);
+      },
+      error: (err: any) => alert(`Error: ${err.error?.detail || 'No se pudo agregar'}`)
+    });
   }
 }

@@ -23,8 +23,8 @@ import { StorageInfo } from '../../models/content.model';
         </div>
       </div>
       <div class="storage-details">
-        <span class="free">{{ storageInfo.free_gb }} GB libres</span>
-        <span class="total">{{ storageInfo.total_gb }} GB</span>
+        <span class="free">{{ formatStorage(storageInfo.free_bytes) }} libres</span>
+        <span class="total">{{ formatStorage(storageInfo.total_bytes) }}</span>
       </div>
     </div>
   `,
@@ -100,5 +100,14 @@ export class StorageInfoComponent implements OnInit {
       next: (info) => this.storageInfo = info,
       error: (err) => console.error('Error loading storage info:', err)
     });
+  }
+
+  formatStorage(bytes: number): string {
+    const gb = bytes / (1024 ** 3);
+    if (gb >= 1024) {
+      const tb = bytes / (1024 ** 4);
+      return `${tb.toFixed(2)} TB`;
+    }
+    return `${gb.toFixed(2)} GB`;
   }
 }

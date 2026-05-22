@@ -2,16 +2,17 @@ import { Component, Input, Output, EventEmitter } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { LucideAngularModule } from 'lucide-angular';
 import { Movie, Series } from '../../models/content.model';
+import { PosterUrlPipe } from '../../pipes/poster-url.pipe';
 
 @Component({
   selector: 'app-movie-card',
   standalone: true,
-  imports: [CommonModule, LucideAngularModule],
+  imports: [CommonModule, LucideAngularModule, PosterUrlPipe],
   template: `
     <div class="movie-card" [class.in-wishlist]="inWishlist">
       <div class="poster-container">
         <img 
-          [src]="posterUrl" 
+          [src]="posterUrl | safePoster" 
           [alt]="itemName"
           class="poster"
           loading="lazy"

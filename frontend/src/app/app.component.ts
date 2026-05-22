@@ -1,7 +1,7 @@
 import { Component } from '@angular/core';
 import { RouterOutlet, RouterLink, RouterLinkActive } from '@angular/router';
 import { CommonModule } from '@angular/common';
-import { LucideAngularModule, Film, Search, Download, HardDrive, Heart, Clock, Tv } from 'lucide-angular';
+import { LucideAngularModule, Film, Search, Download, HardDrive, Heart, Clock, Tv, FolderDown } from 'lucide-angular';
 import { StorageInfoComponent } from './components/storage-info/storage-info.component';
 
 @Component({
@@ -31,11 +31,19 @@ import { StorageInfoComponent } from './components/storage-info/storage-info.com
             <lucide-icon name="film" [size]="20"></lucide-icon>
             <span>Explorar</span>
           </a>
-          <a routerLink="/downloads" routerLinkActive="active" class="nav-item">
-            <lucide-icon name="download" [size]="20"></lucide-icon>
-            <span>Descargas</span>
-            <span class="nav-badge" *ngIf="pendingCount > 0">{{ pendingCount }}</span>
-          </a>
+
+          <div class="nav-section">
+            <div class="nav-section-title">Descargas</div>
+            <a routerLink="/downloads/queue" routerLinkActive="active" class="nav-item nav-sub-item">
+              <lucide-icon name="download" [size]="18"></lucide-icon>
+              <span>Cola</span>
+              <span class="nav-badge" *ngIf="pendingCount > 0">{{ pendingCount }}</span>
+            </a>
+            <a routerLink="/downloads/library" routerLinkActive="active" class="nav-item nav-sub-item">
+              <lucide-icon name="folder-down" [size]="18"></lucide-icon>
+              <span>Descargados</span>
+            </a>
+          </div>
         </nav>
         
         <div class="sidebar-footer">
@@ -144,6 +152,24 @@ import { StorageInfoComponent } from './components/storage-info/storage-info.com
     .nav-item.active .nav-badge {
       background: rgba(255,255,255,0.25);
     }
+
+    .nav-section {
+      margin-top: var(--spacing-sm);
+    }
+
+    .nav-section-title {
+      padding: 0 var(--spacing-md);
+      margin: var(--spacing-sm) 0;
+      color: var(--text-muted);
+      font-size: 0.7rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      font-weight: 700;
+    }
+
+    .nav-sub-item {
+      padding-left: var(--spacing-md);
+    }
     
     .sidebar-footer {
       padding-top: var(--spacing-lg);
@@ -174,5 +200,5 @@ export class AppComponent {
   pendingCount = 0;
 
   // Icons for Lucide
-  readonly icons = { Film, Search, Download, HardDrive, Heart, Clock, Tv };
+  readonly icons = { Film, Search, Download, HardDrive, Heart, Clock, Tv, FolderDown };
 }

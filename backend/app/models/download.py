@@ -30,8 +30,11 @@ class Download(Base):
     
     # For series episodes
     series_name = Column(String, nullable=True)
+    series_id = Column(Integer, nullable=True)
     season = Column(Integer, nullable=True)
     episode = Column(Integer, nullable=True)
+    category_id = Column(String, nullable=True)
+    category_name = Column(String, nullable=True)
     
     # File info
     file_path = Column(String, nullable=True)
@@ -43,6 +46,11 @@ class Download(Base):
     progress = Column(Integer, default=0)  # 0-100
     error_message = Column(String, nullable=True)
     priority = Column(Integer, default=0)
+    retry_count = Column(Integer, default=0)
+    next_retry_at = Column(DateTime(timezone=True), nullable=True)
+    last_attempt_at = Column(DateTime(timezone=True), nullable=True)
+    last_progress_at = Column(DateTime(timezone=True), nullable=True)
+    last_error_at = Column(DateTime(timezone=True), nullable=True)
     
     # Scheduled downloads (for 1 AM batch)
     scheduled = Column(Boolean, default=False)
